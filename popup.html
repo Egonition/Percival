@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      html, body {
+        width: 400px;
+        min-width: 350px;
+        max-width: 600px;
+        padding: 12px;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        overflow-y: auto;
+        max-height: 600px;
+        box-sizing: border-box;
+      }
+
+      h3 {
+        font-size: 14px;
+        margin: 12px 0 6px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 2px;
+      }
+
+      label {
+        display: block;
+        margin: 4px 0;
+        cursor: pointer;
+      }
+
+      input[type="checkbox"] {
+        margin-right: 6px;
+        transform: scale(1.1);
+      }
+
+      body::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      body::-webkit-scrollbar-thumb {
+        background-color: rgba(0,0,0,0.2);
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="options"></div>
+    
+    <script src="constants.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
