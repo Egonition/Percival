@@ -8,6 +8,8 @@ const allKeys = [
   "reloadSkill",
   "redirectFarm",
   "arcaMode",
+  "autoRaid",
+  "autoCombat"
 ];
 
 const storageDefaults = {
@@ -18,6 +20,8 @@ const storageDefaults = {
   reloadSkill: false,
   redirectFarm: false,
   arcaMode: false,
+  autoRaid: false,
+  autoCombat: false
 };
 
 // Category Definitions
@@ -26,4 +30,5 @@ const categories = {
   "Summon Options": ["goBackOnSummon", "reloadSummon"],
   "Skill Options": ["reloadSkill"],
   "Redirect Options": ["redirectFarm", "arcaMode"],
+  "Auto Raid": ["autoRaid", "autoCombat"]
 };

@@ -1,52 +1,38 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <style>
-      html, body {
-        width: 400px;
-        min-width: 350px;
-        max-width: 600px;
-        padding: 12px;
-        margin: 0;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        overflow-y: auto;
-        max-height: 600px;
-        box-sizing: border-box;
-      }
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Percival</title>
+  <style>
+    body { font-family: sans-serif; padding: 10px; width: 300px; }
+    .tabs { margin-bottom: 10px; }
+    .tab { cursor: pointer; padding: 5px 10px; border: 1px solid #ccc; display: inline-block; margin-right: 2px; }
+    .tab.active { background: #eee; font-weight: bold; }
+    .tab-content { display: none; padding: 5px; border-top: 1px solid #ccc; }
+    .tab-content ul { padding-left: 20px; margin: 5px 0; }
+    .tab-content li { margin: 2px 0; }
+    .tab-content li.empty { opacity: 0.5; font-style: italic; }
+  </style>
+</head>
+<body>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="dropsContent">Drop List</button>
+    <button class="tab" data-tab="settingsContent">Settings</button>
+  </div>
 
-      h3 {
-        font-size: 14px;
-        margin: 12px 0 6px;
-        border-bottom: 1px solid #ccc;
-        padding-bottom: 2px;
-      }
+  <!-- Drop List -->
+  <div id="dropsContent" class="tab-content" style="display:block;">
+    <div id="dropContainer"></div>
+  </div>
 
-      label {
-        display: block;
-        margin: 4px 0;
-        cursor: pointer;
-      }
-
-      input[type="checkbox"] {
-        margin-right: 6px;
-        transform: scale(1.1);
-      }
-
-      body::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      body::-webkit-scrollbar-thumb {
-        background-color: rgba(0,0,0,0.2);
-        border-radius: 4px;
-      }
-    </style>
-  </head>
-  <body>
+  <!-- Settings -->
+  <div id="settingsContent" class="tab-content">
     <div id="options"></div>
-    
-    <script src="constants.js"></script>
-    <script src="popup.js"></script>
-  </body>
+  </div>
+
+  <!-- Scripts -->
+  <script src="data/dropTables.js"></script>
+  <script src="popup.js"></script>
+</body>
 </html>

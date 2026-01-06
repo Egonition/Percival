@@ -14,9 +14,19 @@
     "http://game.granbluefantasy.jp/*",
     "https://game.granbluefantasy.jp/*"
   ],
+
   "background": {
     "service_worker": "service_worker.js"
   },
+
+  "content_scripts": [
+    {
+      "matches": ["https://game.granbluefantasy.jp/*"],
+      "js": ["data/dropTables.js", "content_inventory.js", "raid-automation.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -26,13 +36,16 @@
       "128": "images/get_started128.png"
     }
   },
+
   "icons": {
     "16": "images/get_started16.png",
     "32": "images/get_started32.png",
     "48": "images/get_started48.png",
     "128": "images/get_started128.png"
   },
+
   "options_page": "popup.html",
+  
   "commands": {
     "toggle-aracarum-mode": {
       "suggested_key": {
