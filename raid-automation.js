@@ -278,12 +278,12 @@ class RaidAutomator {
 
     const previousScreen = this.state.currentScreen;
     
-    // Check if in Raid Start Screen
-    const okButton = document.querySelector('.btn-usual-ok.se-quest-start');
+    // Check if in Raid Start Screen - Use findOkButton() to check both button types
+    const okButton = this.findOkButton();
     const isStartScreen = okButton && this.isVisible(okButton);
     
     // Check if in Battle Screen
-    const autoButton = document.querySelector('.btn-auto');
+    const autoButton = this.findAutoButton();
     const isBattleScreen = autoButton && this.isVisible(autoButton);
     
     // Update Current Screen State
@@ -813,8 +813,15 @@ class RaidAutomator {
   }
   
   findOkButton() {
-    const button = document.querySelector('.btn-usual-ok.se-quest-start');
-    return button && this.isVisible(button) ? button : null;
+    // Check both button types
+    const button1 = document.querySelector('.btn-usual-ok.se-quest-start');
+    const button2 = document.querySelector('.btn-usual-ok.btn-silent-se');
+    
+    // Return first visible button found
+    if (button1 && this.isVisible(button1)) return button1;
+    if (button2 && this.isVisible(button2)) return button2;
+    
+    return null;
   }
   
   findAutoButton() {
