@@ -20,7 +20,7 @@ class RaidAutomator {
       totalRaids: 0,
       lastMousePosition: { x: 0, y: 0 },
 
-      // Track if Attempted to Click Auto Button in this Battle
+      // Auto Combat Click Tracking
       autoClickAttempted: false
     };
     
@@ -29,7 +29,7 @@ class RaidAutomator {
       auto: 0
     };
     
-    // Timing Configurations with Human-Like Variability
+    // Timing Settings
     this.timing = {
       COOLDOWN: 2000 + Math.random() * 3000, // 2-5 seconds
       CHECK_INTERVAL: 800 + Math.random() * 700, // 0.8-1.5 seconds
@@ -40,7 +40,7 @@ class RaidAutomator {
       STEP_DELAY_MIN: 10,
       STEP_DELAY_MAX: 30,    // Variable Step Timing
 
-      // Human behavior settings
+      // Human-Like Delays
       HUMAN_DELAY_CHANCE: 0.3, // 30% chance of extra delay
       HUMAN_DELAY_MIN: 500,    // 0.5 second minimum extra delay
       HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
@@ -113,7 +113,7 @@ class RaidAutomator {
   setupObserver() {
     this.observer = new MutationObserver((mutations) => {
       if (this.state.active) {
-        // Check for Popups in Newly Added Nodes
+        // Check for Popups in Added Nodes
         mutations.forEach((mutation) => {
           if (mutation.addedNodes.length > 0) {
             mutation.addedNodes.forEach((node) => {
@@ -142,25 +142,25 @@ class RaidAutomator {
   detectCurrentScreen() {
     const previousScreen = this.state.currentScreen;
     
-    // Check if on raid start screen
+    // Check if in raid start screen
     const okButton = document.querySelector('.btn-usual-ok.se-quest-start');
     const isStartScreen = okButton && this.isVisible(okButton);
     
-    // Check if in battle
+    // Check if in battle screen
     const autoButton = document.querySelector('.btn-auto');
     const isBattleScreen = autoButton && this.isVisible(autoButton);
     
-    // Update Screen State
+    // Update Current Screen State
     if (isStartScreen) {
       this.state.currentScreen = 'start';
-      // Reset Auto Combat State when Back to Start Screen
+      // Reset Auto Combat State when Leaving Battle
       if (previousScreen === 'battle' && this.state.autoCombatActive) {
         this.state.autoCombatActive = false;
         this.state.autoClickAttempted = false; // Reset for Next Battle
         this.state.totalRaids++;
         this.updateStatus(`Raid ${this.state.totalRaids} complete`);
         
-        // Check if Need a Human-Like Break
+        // Check for Human Break
         if (this.state.consecutiveActions >= this.timing.BREAK_AFTER_ACTIONS) {
           this.takeHumanBreak();
         }
@@ -173,20 +173,20 @@ class RaidAutomator {
   }
   
   hasBlockingPopup() {
-    // Check for Popup Header
+    // Check for Common Popup Elements
     const popupHeader = document.querySelector('.prt-popup-header');
     if (popupHeader && this.isVisible(popupHeader)) {
-      // Get Popup Text for Log
+      // Get Popup Text
       const popupText = popupHeader.textContent?.trim() || '';
       
-      // Check for Text Content
+      // Empty Popup Check
       if (popupText.length === 0) {
         return { found: false };
       }
       
       const popupTextLower = popupText.toLowerCase();
       
-      // Check if this is an AP/AAP-related popup
+      // Check for AP Related Popups
       const isAPPopup = popupTextLower.includes('ap') || 
                        popupTextLower.includes('aap');
       
@@ -199,7 +199,7 @@ class RaidAutomator {
         };
       }
       
-      // Also check for other common popups
+      // Check for Blocking Room Full Popups
       const isBlockingPopup = popupTextLower.includes('満員') ||
                              popupTextLower.includes('満室'); 
       
@@ -228,14 +228,14 @@ class RaidAutomator {
       this.stop();
       this.updateStatus(`Popup: ${popupInfo.text}`);
       
-      // Update Storage to Uncheck the Automation Checkboxes
+      // Disable Checkboxes in Storage
       chrome.storage.sync.set({
         autoRaid: false,
         autoCombat: false
       }, () => {
         console.log('✅ Checkboxes Disabled in Storage Due to Popup.');
         
-        // Notify Content Script that Settings Changed
+        // Notify Background Script of Settings Change
         this.safeSendMessage({
           type: 'settingsChanged',
           autoRaid: false,
@@ -243,7 +243,7 @@ class RaidAutomator {
         });
       });
       
-      // Send Notification to Popup
+      // Log Status
       const status = {
         type: 'popupDetected',
         active: false,
@@ -259,7 +259,7 @@ class RaidAutomator {
     }
   }
 
-  // Safe Message Sending Function to Prevent Console Errors
+  // Safe Send Message Wrapper
   safeSendMessage(message) {
     return new Promise((resolve) => {
       try {
@@ -356,11 +356,11 @@ class RaidAutomator {
     if (now - this.state.lastCheck < 500) return;
     this.state.lastCheck = now;
     
-    // Check for OK button if autoRaid is enabled AND on start screen
+    // Check for OK button if autoRaid is enabled AND in start screen
     if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
       const okButton = this.findOkButton();
       if (okButton) {
-        // Check for Popup before Click
+        // Check for Popup before Clicking OK Button
         if (this.hasBlockingPopup().found) {
           this.handlePopupDetected();
           return;
@@ -369,7 +369,7 @@ class RaidAutomator {
       }
     }
     
-    // Check for auto button if autoCombat is enabled AND in battle
+    // Check for Auto button if autoCombat is enabled AND in battle screen
     if (this.settings.autoCombat && this.canClick('auto') && 
         this.state.currentScreen === 'battle' && !this.state.autoClickAttempted) {
       const autoButton = this.findAutoButton();
@@ -393,7 +393,7 @@ class RaidAutomator {
     
     this.cooldowns.ok = Date.now();
     
-    // Reset Auto Combat State when Starting New Battle
+    // Reset Auto Combat State
     this.state.autoCombatActive = false;
     this.state.autoClickAttempted = false; // Reset for New Battle
     this.state.consecutiveActions++;
@@ -420,10 +420,10 @@ class RaidAutomator {
       return;
     }
     
-    // Click with Human-Like Mouse Movement
+    // Perform Click
     await this.simulateHumanClick(button, 'OK (Start Raid)');
     
-    // If Auto Combat is Enabled, Schedule after Battle Loads
+    // Schedule Auto Combat if Enabled
     if (this.settings.autoCombat) {
       const raidLoadTime = this.getRandomDelay(
         this.timing.RAID_LOAD_MIN,
@@ -432,7 +432,7 @@ class RaidAutomator {
       
       this.updateStatus(`Starting raid... Auto in ${Math.round(raidLoadTime/1000)}s`);
       
-      // Schedule Auto Button Click after Raid Loads
+      // Check Auto Button after Delay
       setTimeout(() => {
         this.checkAutoButton();
       }, raidLoadTime);
@@ -448,7 +448,7 @@ class RaidAutomator {
       return;
     }
     
-    // Mark Attempt to Click Auto Button
+    // Mark Auto Click as Attempted
     this.state.autoClickAttempted = true;
     this.cooldowns.auto = Date.now();
     this.state.consecutiveActions++;
@@ -555,7 +555,7 @@ class RaidAutomator {
     if (autoButton && !this.state.autoClickAttempted && !this.state.autoCombatActive) {
       this.clickAutoCombat(autoButton);
     } else if (!autoButton && !this.state.autoClickAttempted) {
-      // Auto Button Not Found, Retry after Random Delay
+      // Retry after Short Delay if Auto Button Not Found
       setTimeout(() => {
         this.checkAutoButton();
       }, 1000 + Math.random() * 2000);
@@ -593,7 +593,7 @@ class RaidAutomator {
   async simulateHumanClick(element, actionName) {
     if (!element) return;
     
-    // Check for Popup at the Start of the Click
+    // Check for Popup before Click
     if (this.hasBlockingPopup().found) {
       this.handlePopupDetected();
       return;
@@ -601,7 +601,7 @@ class RaidAutomator {
     
     const rect = element.getBoundingClientRect();
     
-    // Human-like Target
+    // Calculate Safe Clickable Area
     const padding = 5;
     const clickableLeft = rect.left + padding;
     const clickableRight = rect.right - padding;

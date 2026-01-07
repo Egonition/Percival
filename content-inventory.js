@@ -1,18 +1,19 @@
 (() => {
   'use strict';
 
-  // Flatten all item IDs from DROP_DATA
+  // --- Load Drop Data ---
   const ITEM_IDS = DROP_DATA.flatMap(cat => cat.drops.map(d => d.id));
 
-  // Track Quest Drops have Been Processed
+  // --- Inventory Scraping ---
   let processedDrops = {}; // key: item id
 
-  // Extract Numeric ID from Image Src
+  // Extract Item ID from Image Src
   function extractItemIdFromSrc(src) {
     const match = src && src.match(/\/(\d+)\.(png|jpg)/);
     return match ? Number(match[1]) : null;
   }
 
+  // Scrape Inventory from DOM
   function scrapeInventoryFromDOM() {
     chrome.storage.local.get("gbfInventory", (data) => {
       const oldInventory = data.gbfInventory || {};
@@ -27,6 +28,7 @@
         ".lis-item.summon"
       ];
 
+      // Process Standard Inventory Items
       document.querySelectorAll(standardSelectors.join(",")).forEach(item => {
         const img = item.querySelector("img.prt-thumb, img");
         const countNode = item.querySelector(".prt-having-num");
@@ -52,10 +54,10 @@
         const id = extractItemIdFromSrc(img.src);
         if (!id || !ITEM_IDS.includes(id)) return;
 
-        // Skip if Already Processed
+        //  Skip if Already Processed
         if (processedDrops[id]) return;
 
-        // Parse Count from Selector
+        // Get Count (Default to 1 if Not Found)
         let count = 1;
         const countNode = item.querySelector(".prt-article-count");
         if (countNode) {
@@ -88,14 +90,14 @@
     });
   }
 
-  // --- Observe Page for Lazy-Loaded Items ---
+  // --- Observe DOM Changes ---
   const observer = new MutationObserver(() => scrapeInventoryFromDOM());
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // --- Initial Scrape ---
+  // Initial Scrape
   scrapeInventoryFromDOM();
 
-  // --- Reset processedDrops on Page Unload ---
+  // Clear Processed Drops on Unload
   window.addEventListener('beforeunload', () => {
     processedDrops = {};
   });

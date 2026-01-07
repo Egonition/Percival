@@ -6,7 +6,7 @@ const skills = {
   "8001": "Tag team"
 };
 
-// Watch for storage changes (debugging)
+// Listen for Storage Changes
 chrome.storage.onChanged.addListener(function (changes, namespace) {
   for (let key in changes) {
     let storageChange = changes[key];
@@ -20,7 +20,7 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
   }
 });
 
-// Toggle Arcarum Mode
+// Toggle Arca Mode
 function toggleArcaMode() {
   console.log("Toggle Arca");
   const params = ["reloadSkill", "redirectFarm", "arcaMode"];
@@ -33,7 +33,7 @@ function toggleArcaMode() {
   });
 }
 
-// Deactivate everything
+// Deactivate All
 function deactivateAll() {
   console.log("Deactivate All");
   let allVal = {};
@@ -53,7 +53,7 @@ chrome.commands.onCommand.addListener(function (command) {
   if (keyboardShortcut[command]) keyboardShortcut[command]();
 });
 
-// Summon & Attack Result
+// Attack and Summon Reload
 chrome.webRequest.onCompleted.addListener(
   function (details) {
     chrome.storage.sync.get(
@@ -121,7 +121,7 @@ chrome.webRequest.onBeforeRequest.addListener(
   ["requestBody"]
 );
 
-// Redirect Farm (Normal Quests)
+// Redirect Farm (Normal Raid)
 chrome.webRequest.onCompleted.addListener(
   function (details) {
     chrome.storage.sync.get(["redirectFarm", "arcaMode"], function (data) {
@@ -167,7 +167,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-// Set defaults on install
+// Set Storage Defaults on Install
 chrome.runtime.onInstalled.addListener(function () {
   chrome.storage.sync.set(storageDefaults, () => {
     console.log("Storage defaults applied:", storageDefaults);

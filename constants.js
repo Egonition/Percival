@@ -1,5 +1,6 @@
 'use strict';
 
+// Setting Keys and Defaults
 const allKeys = [
   "goBackOnAttack",
   "reloadAttack",
@@ -12,6 +13,7 @@ const allKeys = [
   "autoCombat"
 ];
 
+// Default Values
 const storageDefaults = {
   goBackOnAttack: false,
   reloadAttack: false,
@@ -24,7 +26,7 @@ const storageDefaults = {
   autoCombat: false
 };
 
-// Category Definitions
+// Categories for UI Grouping
 const categories = {
   "Attack Options": ["goBackOnAttack", "reloadAttack"],
   "Summon Options": ["goBackOnSummon", "reloadSummon"],

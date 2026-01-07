@@ -40,10 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const allKeys = Object.values(categories).flat();
   
-  // Define defaults for ALL settings
+  // Default Settings
   const storageDefaults = {};
   allKeys.forEach(key => {
-    storageDefaults[key] = false; // All checkboxes start unchecked by default
+    storageDefaults[key] = false; // Default to False
   });
 
   const container = document.getElementById("options");
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Add status display for raid automation
+  // --- Raid Automation Status ---
   const statusDiv = document.createElement("div");
   statusDiv.id = "raidStatus";
   statusDiv.style.margin = "15px 0 10px";
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   container.appendChild(statusDiv);
 
-  // Function to update raid automation status display
+  // Function to Update Raid Status Display
   function updateRaidStatusDisplay(message = null) {
     const statusDiv = document.getElementById("raidStatus");
     if (!statusDiv) return;
@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoRaidEnabled = elements.autoRaid?.checked || false;
     const autoCombatEnabled = elements.autoCombat?.checked || false;
     
-    // If we have a specific message from content script
+    // If Message Provided, Use It to Update Status
     if (message && message.type === 'raidStatusUpdate') {
       if (message.active) {
         let features = [];
@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    // Default status based on checkbox states
+    // No Message, Just Update Based on Current Settings
     if (autoRaidEnabled || autoCombatEnabled) {
       let features = [];
       if (autoRaidEnabled) features.push('Start Raid');
@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Add this function to handle popup notifications
+  // Handle Popup Detected Message
   function handlePopupDetected(message) {
     const statusDiv = document.getElementById("raidStatus");
     if (!statusDiv) return;
@@ -193,14 +193,14 @@ document.addEventListener('DOMContentLoaded', () => {
     statusDiv.style.backgroundColor = "#FFEBEE";
     statusDiv.style.borderLeftColor = "#FF5722";
     
-    // Uncheck the automation checkboxes
+    // Disable Automation Checkboxes
     const autoRaidCheckbox = document.querySelector('#autoRaid');
     const autoCombatCheckbox = document.querySelector('#autoCombat');
     
     if (autoRaidCheckbox) autoRaidCheckbox.checked = false;
     if (autoCombatCheckbox) autoCombatCheckbox.checked = false;
     
-    // Also update the stored settings
+    // Save Disabled State to Storage
     if (elements.autoRaid) {
       chrome.storage.sync.set({ autoRaid: false });
     }
@@ -209,24 +209,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Load saved settings and update status
+  // Load Settings from Storage
   chrome.storage.sync.get(storageDefaults, (data) => {
     for (let key of allKeys) {
       if (elements[key]) {
         elements[key].checked = !!data[key];
       }
     }
-    // Update status display after loading settings
+    // Initial
     updateRaidStatusDisplay();
     
-    // Try to get current status from content script
+    // Request Current Status from Content Script
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(tabs[0].id, { 
           type: 'getStatus' 
         }, (response) => {
           if (chrome.runtime.lastError) {
-            // Content script not ready or not on GBF page
+            // Content Script Not Available
             console.log('Content script not available:', chrome.runtime.lastError.message);
           } else if (response) {
             updateRaidStatusDisplay(response);
@@ -236,19 +236,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Save settings and send updates to content script
+  // Save Settings on Change
   for (let key in elements) {
     elements[key].onchange = e => {
       const isChecked = e.target.checked;
       
-      // Save to storage
+      // Save to Storage
       chrome.storage.sync.set({ [key]: isChecked }, () => {
         if (chrome.runtime.lastError) {
           console.error('Error saving to storage:', chrome.runtime.lastError);
         }
       });
       
-      // If it's an automation setting, send message to content script
+      // Notify Content Script of Setting Change
       if (key === 'autoRaid' || key === 'autoCombat') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {
@@ -263,12 +263,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       
-      // Update status display
+      // Update Status Display
       updateRaidStatusDisplay();
     };
   }
 
-  // Listen for storage changes
+  // Listen for Storage Changes to Update UI
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync') {
       for (let key in changes) {
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
           elements[key].checked = !!changes[key].newValue;
         }
       }
-      // Update status when settings change
+      // Update Status Display
       updateRaidStatusDisplay();
     }
   });
@@ -327,21 +327,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial load from storage
+  // Initial Render
   chrome.storage.local.get("gbfInventory", (data) => {
     renderDrops(data.gbfInventory || {});
   });
 
-  // Listen for live updates from content script
+  // Listen for Inventory Updates
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "inventoryUpdated") {
       renderDrops(msg.inventory);
     }
-    // Add this for raid automation status
+    // Raid Status Update
     else if (msg.type === "raidStatusUpdate") {
       updateRaidStatusDisplay(msg);
     }
-    // Add this for popup detection
+    // Popup Detected
     else if (msg.type === "popupDetected") {
       handlePopupDetected(msg);
     }

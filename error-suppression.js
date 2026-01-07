@@ -1,36 +1,36 @@
 (function() {
   'use strict';
   
-  console.log('[GBF Auto] Error suppression enabled');
+  console.log('[GBF Auto] Error Suppression Enabled');
   
-  // 1. Monkey patch chrome.runtime.sendMessage
+  // Monkey Patch
   const originalSendMessage = chrome.runtime.sendMessage;
   
   chrome.runtime.sendMessage = function(message, callback) {
-    // Always provide a callback if none was given
+    // Create a Safe Callback to Avoid Errors
     const safeCallback = callback || function() {};
     
-    // Call the original with our safe callback
+    // Call the Original Function
     return originalSendMessage.call(chrome.runtime, message, function(response) {
       if (chrome.runtime.lastError) {
-        // Check if it's the error we want to suppress
+        // Check for Specific Error Messages to Suppress
         const errorMsg = chrome.runtime.lastError.message || '';
         if (errorMsg.includes('Could not establish connection') || 
             errorMsg.includes('Receiving end does not exist')) {
-          // Silently ignore - popup is closed
+          // Silent Ignore
           return;
         }
-        // For other errors, you might want to handle them differently
+        // Optionally Log Other Errors
       }
       
-      // Call the original callback if it exists
+      // Call the Original Callback if Provided
       if (callback) {
         callback(response);
       }
     });
   };
   
-  // 2. Also patch chrome.tabs.sendMessage if you use it
+  // 2. Patch Similar
   if (chrome.tabs && chrome.tabs.sendMessage) {
     const originalTabsSendMessage = chrome.tabs.sendMessage;
     
@@ -53,7 +53,7 @@
     };
   }
   
-  // 3. Optional: Catch any remaining unhandled promise rejections
+  // Global Unhandled Rejection Handler
   window.addEventListener('unhandledrejection', function(event) {
     const errorMessage = event.reason?.message || '';
     if (errorMessage.includes('Could not establish connection') || 
