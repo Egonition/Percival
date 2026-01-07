@@ -715,11 +715,16 @@ class RaidAutomator {
     
     // Get Click Coordinates within the Button
     const rect = button.getBoundingClientRect();
-    const padding = 5;
-    const clickableLeft = rect.left + padding;
-    const clickableRight = rect.right - padding;
-    const clickableTop = rect.top + padding;
-    const clickableBottom = rect.bottom - padding;
+    
+    const safeAreaPercent = 0.9; // 90% Safe Area
+    const widthPadding = rect.width * (1 - safeAreaPercent) / 2;
+    const heightPadding = rect.height * (1 - safeAreaPercent) / 2;
+
+    const clickableLeft = rect.left + widthPadding;
+    const clickableRight = rect.right - widthPadding;
+    const clickableTop = rect.top + heightPadding;
+    const clickableBottom = rect.bottom - heightPadding;
+
     const clickableWidth = clickableRight - clickableLeft;
     const clickableHeight = clickableBottom - clickableTop;
     
@@ -846,12 +851,15 @@ class RaidAutomator {
     
     const rect = element.getBoundingClientRect();
     
-    // Calculate Safe Clickable Area
-    const padding = 5;
-    const clickableLeft = rect.left + padding;
-    const clickableRight = rect.right - padding;
-    const clickableTop = rect.top + padding;
-    const clickableBottom = rect.bottom - padding;
+    const safeAreaPercent = 0.9; // 90% Safe Area
+    const widthPadding = rect.width * (1 - safeAreaPercent) / 2;
+    const heightPadding = rect.height * (1 - safeAreaPercent) / 2;
+
+    const clickableLeft = rect.left + widthPadding;
+    const clickableRight = rect.right - widthPadding;
+    const clickableTop = rect.top + heightPadding;
+    const clickableBottom = rect.bottom - heightPadding;
+
     const clickableWidth = clickableRight - clickableLeft;
     const clickableHeight = clickableBottom - clickableTop;
     
