@@ -15,11 +15,22 @@ class RaidAutomator {
 
       // Human Behavior Tracking
       lastHumanAction: Date.now(),
-      consecutiveActions: 0,
       sessionStart: Date.now(),
       totalRaids: 0,
       lastMousePosition: { x: 0, y: 0 },
 
+      // Raid Completion Tracking
+      lastRaidStartTime: 0,
+      raidInProgress: false,
+      lastRaidCompletionLog: 0,
+
+      // Break Tracking
+      isOnBreak: false,
+      breakStartTime: 0,
+      breakEndTime: 0,
+      raidsSinceLastBreak: 0,
+      lastBreakTime: 0,
+      
       // Auto Combat Click Tracking
       autoClickAttempted: false
     };
@@ -40,13 +51,28 @@ class RaidAutomator {
       STEP_DELAY_MIN: 10,
       STEP_DELAY_MAX: 30,    // Variable Step Timing
 
-      // Human-Like Delays
+      // Human Delay Settings
       HUMAN_DELAY_CHANCE: 0.3, // 30% chance of extra delay
       HUMAN_DELAY_MIN: 500,    // 0.5 second minimum extra delay
       HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
-      BREAK_AFTER_ACTIONS: 8 + Math.floor(Math.random() * 8), // Break after 8-15 actions
-      BREAK_MIN: 10000,        // 10 second minimum break
-      BREAK_MAX: 45000         // 45 second maximum break
+
+      // Break Probability Settings
+      BREAK_CHANCE_PER_RAID: 0.15, // 15% chance to take a break after any raid
+      MIN_RAIDS_BETWEEN_BREAKS: 2,  // At least 2 raids between breaks
+      MAX_RAIDS_BETWEEN_BREAKS: 8,  // At most 8 raids between breaks
+      
+      // Break Duration Settings
+      SHORT_BREAK_MIN: 10000,     // 10 seconds
+      SHORT_BREAK_MAX: 30000,     // 30 seconds
+      MEDIUM_BREAK_MIN: 45000,    // 45 seconds
+      MEDIUM_BREAK_MAX: 90000,    // 1.5 minutes
+      LONG_BREAK_MIN: 120000,     // 2 minutes
+      LONG_BREAK_MAX: 300000,     // 5 minutes
+      
+      // Break Type Probabilities
+      SHORT_BREAK_CHANCE: 0.6,    // 60% short breaks
+      MEDIUM_BREAK_CHANCE: 0.3,   // 30% medium breaks
+      LONG_BREAK_CHANCE: 0.1      // 10% long breaks
     };
     
     this.observer = null;
@@ -56,6 +82,22 @@ class RaidAutomator {
   
   async init() {
     await this.loadSettings();
+    await this.loadPersistentState(); // Load Saved Raid Count
+
+    // Check for Ongoing Break
+    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
+      const timeLife = Math.ceil((this.state.breakEndTime - Date.now()) / 1000);
+      this.updateStatus(`⏸️ On Break for ${timeLife} More Seconds...`);
+
+      // Resume Break Monitoring
+      this.monitorBreak();
+      return;
+    } else if (this.state.isOnBreak) {
+      // Break has Ended
+      this.state.isOnBreak = false;
+      this.savePersistentState();
+    }
+    
     this.setupListeners();
     this.setupObserver();
     
@@ -64,7 +106,58 @@ class RaidAutomator {
       this.start();
     }
   }
+
+  monitorBreak() {
+    const breakMessages = [
+      "Taking a quick break...",
+      "Stretching...",
+      "Checking notifications...",
+      "Getting some water...",
+      "Looking away from screen...",
+      "Quick rest..."
+    ];
+    
+    const checkBreak = () => {
+      if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
+        const timeLeft = Math.ceil((this.state.breakEndTime - Date.now()) / 1000);
+        
+        // Update Status Every 15 Seconds with Random Message
+        if (timeLeft % 15 === 0) {
+          const randomMessage = breakMessages[Math.floor(Math.random() * breakMessages.length)];
+          this.updateStatus(`${randomMessage} (${timeLeft}s left)`);
+        } else {
+          this.updateStatus(`⏸️ Break: ${timeLeft}s remaining`);
+        }
+        
+        setTimeout(checkBreak, 1000);
+      } else if (this.state.isOnBreak) {
+        // Break has Ended
+        this.state.isOnBreak = false;
+        this.savePersistentState();
+        
+        const resumeMessages = [
+          "Back to it!",
+          "Break over, resuming...",
+          "Ready to go again!",
+          "Let's continue!"
+        ];
+        const randomResume = resumeMessages[Math.floor(Math.random() * resumeMessages.length)];
+        this.updateStatus(randomResume);
+
+        // Resume Automation if Enabled
+        this.setupListeners();
+        this.setupObserver();
+
+        if (this.settings.autoRaid || this.settings.autoCombat) {
+          this.start();
+        }
+      }
+    };
+
+    checkBreak();
+  }
   
+  // Load Settings from Storage
   async loadSettings() {
     return new Promise(resolve => {
       chrome.storage.sync.get(['autoRaid', 'autoCombat'], data => {
@@ -74,7 +167,45 @@ class RaidAutomator {
       });
     });
   }
-  
+
+  // Load Persistent State
+  async loadPersistentState() {
+    return new Promise(resolve => {
+      chrome.storage.local.get(['raidAutomatorState'], data => {
+        if (data.raidAutomatorState) {
+          const saved = data.raidAutomatorState;
+          this.state.totalRaids = saved.totalRaids || 0;
+          this.state.sessionStart = saved.sessionStart || Date.now();
+          this.state.raidsSinceLastBreak = saved.raidsSinceLastBreak || 0;
+          this.state.lastBreakTime = saved.lastBreakTime || 0;
+          this.state.isOnBreak = saved.isOnBreak || false;
+          this.state.breakStartTime = saved.breakStartTime || 0;
+          this.state.breakEndTime = saved.breakEndTime || 0;
+          
+          console.log(`📊 Loaded: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+        }
+        resolve();
+      });
+    });
+  }
+
+  // Save Persistent State
+  async savePersistentState() {
+    const stateToSave = {
+      totalRaids: this.state.totalRaids,
+      sessionStart: this.state.sessionStart,
+      raidsSinceLastBreak: this.state.raidsSinceLastBreak,
+      lastBreakTime: this.state.lastBreakTime,
+      isOnBreak: this.state.isOnBreak,
+      breakStartTime: this.state.breakStartTime,
+      breakEndTime: this.state.breakEndTime
+    };
+
+    chrome.storage.local.set({ raidAutomatorState: stateToSave }, () => {
+      console.log(`💾 Saved: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+    });
+  }
+
   setupListeners() {
     chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       if (msg.type === 'updateSettings') {
@@ -140,35 +271,90 @@ class RaidAutomator {
   }
   
   detectCurrentScreen() {
+    // Skip if on Break
+    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
+      return;
+    }
+
     const previousScreen = this.state.currentScreen;
     
-    // Check if in raid start screen
+    // Check if in Raid Start Screen
     const okButton = document.querySelector('.btn-usual-ok.se-quest-start');
     const isStartScreen = okButton && this.isVisible(okButton);
     
-    // Check if in battle screen
+    // Check if in Battle Screen
     const autoButton = document.querySelector('.btn-auto');
     const isBattleScreen = autoButton && this.isVisible(autoButton);
     
     // Update Current Screen State
     if (isStartScreen) {
       this.state.currentScreen = 'start';
-      // Reset Auto Combat State when Leaving Battle
-      if (previousScreen === 'battle' && this.state.autoCombatActive) {
-        this.state.autoCombatActive = false;
-        this.state.autoClickAttempted = false; // Reset for Next Battle
-        this.state.totalRaids++;
-        this.updateStatus(`Raid ${this.state.totalRaids} complete`);
-        
-        // Check for Human Break
-        if (this.state.consecutiveActions >= this.timing.BREAK_AFTER_ACTIONS) {
-          this.takeHumanBreak();
-        }
+      
+      // Check if Came from Battle Screen
+      if (previousScreen === 'battle' && this.state.raidInProgress) {
+        this.handleRaidCompletion();
       }
+      
+      // Reset Battle Tracking
+      this.state.raidInProgress = false;
+      this.state.autoCombatActive = false;
+      this.state.autoClickAttempted = false;
+      
     } else if (isBattleScreen) {
       this.state.currentScreen = 'battle';
+      
+      // Mark Raid as In Progress
+      if (!this.state.autoCombatActive && !this.state.raidInProgress) {
+        this.state.raidInProgress = true;
+        this.state.lastRaidStartTime = Date.now();
+        this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
+      }
+      
     } else {
       this.state.currentScreen = 'other';
+      
+      // Check if Came from Battle Screen
+      if (previousScreen === 'battle' && this.state.raidInProgress) {
+        this.handleRaidCompletion();
+        this.state.raidInProgress = false;
+      }
+    }
+  }
+
+  handleRaidCompletion() {
+    // Skip if on Break
+    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
+      return;
+    }
+
+    // Prevent Duplicate Logs
+    if (Date.now() - this.state.lastRaidCompletionLog < 1000) return;
+    
+    this.state.totalRaids++;
+    this.state.raidsSinceLastBreak++;
+    this.state.lastRaidCompletionLog = Date.now();
+    
+    const raidDuration = Date.now() - this.state.lastRaidStartTime;
+    const durationSeconds = Math.round(raidDuration / 1000);
+
+    this.savePersistentState();
+    
+    this.updateStatus(`Raid ${this.state.totalRaids} complete! (${durationSeconds}s)`);
+    console.log(`✅ Raid ${this.state.totalRaids} completed in ${durationSeconds} seconds`);
+    
+    // Check if it's time for a break
+    if (this.shouldTakeBreak()) {
+      this.takeHumanBreak();
+    }
+
+    // Track Raid Durations for Averages
+    this.state.raidDurations = this.state.raidDurations || [];
+    this.state.raidDurations.push(raidDuration);
+    
+    // Log Average Raid Time Every 10 Raids
+    if (this.state.totalRaids % 10 === 0) {
+      const avgDuration = this.state.raidDurations.reduce((a, b) => a + b, 0) / this.state.raidDurations.length;
+      console.log(`📊 Average raid time: ${Math.round(avgDuration/1000)}s`);
     }
   }
   
@@ -280,22 +466,72 @@ class RaidAutomator {
       }
     });
   }
+
+  shouldTakeBreak() {
+    // Ensure Some Time has Passed Since Last Break
+    if (Date.now() - this.state.lastBreakTime < 60000) return false;
+    
+    // Minimum raids between breaks
+    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) return false;
+    
+    // Maximum raids between breaks
+    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) return true;
+    
+    // Random chance based on raids completed
+    const breakChance = this.timing.BREAK_CHANCE_PER_RAID * 
+                      (this.state.raidsSinceLastBreak / this.timing.MIN_RAIDS_BETWEEN_BREAKS);
+    
+    return Math.random() < breakChance;
+  }
   
   async takeHumanBreak() {
     if (!this.state.active) return;
+
+    // Determine Break Type
+    const breakType = this.determineBreakType();
+    const breakTime = this.getBreakDuration(breakType);
     
-    const breakTime = this.getRandomDelay(
-      this.timing.BREAK_MIN,
-      this.timing.BREAK_MAX
-    );
+    // Set Break State
+    this.state.isOnBreak = true;
+    this.state.breakStartTime = Date.now();
+    this.state.breakEndTime = Date.now() + breakTime;
+    this.state.raidsSinceLastBreak = 0;
+    this.state.lastBreakTime = Date.now();
+
+    const breakMinutes = Math.round(breakTime / 60000);
+    const breakSeconds = Math.round((breakTime % 60000) / 1000);
+      
+    this.updateStatus(`${breakType} break: ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
+    console.log(`⏸️ Taking ${breakType} break after ${this.state.totalRaids} raids for ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
+
+    // Save State
+    await this.savePersistentState();
     
-    this.updateStatus(`Taking break for ${Math.round(breakTime/1000)}s`);
-    this.state.consecutiveActions = 0;
+    // Stop Automation
+    this.stop();
     
-    // Simulate Human-Like Inactivity
-    await this.sleep(breakTime);
-    
-    this.updateStatus('Break over, resuming...');
+    // Start Monitoring Break
+    this.monitorBreak();
+  }
+
+  determineBreakType() {
+    const rand = Math.random();
+    if (rand < this.timing.SHORT_BREAK_CHANCE) return 'short';
+    if (rand < this.timing.SHORT_BREAK_CHANCE + this.timing.MEDIUM_BREAK_CHANCE) return 'medium';
+    return 'long';
+  }
+
+  getBreakDuration(breakType) {
+    switch (breakType) {
+      case 'short':
+        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
+      case 'medium':
+        return this.getRandomDelay(this.timing.MEDIUM_BREAK_MIN, this.timing.MEDIUM_BREAK_MAX);
+      case 'long':
+        return this.getRandomDelay(this.timing.LONG_BREAK_MIN, this.timing.LONG_BREAK_MAX);
+      default:
+        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
+    }
   }
   
   updateSettings(msg) {
@@ -344,6 +580,11 @@ class RaidAutomator {
   }
   
   checkButtons() {
+    // Skip if on Break
+    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
+      return;
+    }
+
     if (!this.state.active) return;
     
     // Check for Popups
@@ -396,7 +637,12 @@ class RaidAutomator {
     // Reset Auto Combat State
     this.state.autoCombatActive = false;
     this.state.autoClickAttempted = false; // Reset for New Battle
-    this.state.consecutiveActions++;
+
+    // Increment Total Raids
+    const nextRaidNumber = this.state.totalRaids + 1;
+    this.updateStatus(`Starting Raid ${nextRaidNumber}...`);
+
+    await this.savePersistentState(); // Save Updated Raid Count
     
     // Add Human-Like Delay before Action
     if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
@@ -451,7 +697,6 @@ class RaidAutomator {
     // Mark Auto Click as Attempted
     this.state.autoClickAttempted = true;
     this.cooldowns.auto = Date.now();
-    this.state.consecutiveActions++;
     
     // Add Human-Like Delay before Action
     if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
@@ -530,12 +775,12 @@ class RaidAutomator {
     }
     
     // Perform Click
-    const clicked = await this.performSingleReliableClick(button, x, y, 'FULL Auto');
+    const clicked = await this.performSingleReliableClick(button, x, y, 'Auto Combat');
     
     if (clicked) {
       this.state.autoCombatActive = true;
-      this.updateStatus('Auto combat enabled');
-      console.log('✅ Auto combat clicked successfully (once)');
+      this.updateStatus('Auto Combat Enabled');
+      console.log('✅ Auto Combat Clicked Successfully');
     } else {
       // Mark Click as Attempted to Prevent Endless Retries
       this.state.autoCombatActive = true;
@@ -752,7 +997,7 @@ class RaidAutomator {
         element.click();
       }
       
-      console.log(`✅ ${actionName} click successful at ${Math.round(x)},${Math.round(y)}`);
+      console.log(`✅ ${actionName} Click Successful at ${Math.round(x)},${Math.round(y)}`);
       return true;
     } catch (error) {
       console.log(`❌ Click failed for ${actionName}:`, error);

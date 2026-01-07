@@ -1,7 +1,7 @@
 (function() {
   'use strict';
   
-  console.log('[GBF Auto] Error Suppression Enabled');
+  console.log('Error Suppression Enabled');
   
   // Monkey Patch
   const originalSendMessage = chrome.runtime.sendMessage;
