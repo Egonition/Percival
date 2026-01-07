@@ -170,6 +170,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Add this function to handle popup notifications
+  function handlePopupDetected(message) {
+    const statusDiv = document.getElementById("raidStatus");
+    if (!statusDiv) return;
+    
+    const popupText = message.popupInfo?.text || 'Unknown popup';
+    
+    statusDiv.innerHTML = `
+      <div style="display: flex; align-items: center; margin-bottom: 8px;">
+        <div style="width: 10px; height: 10px; background-color: #FF5722; border-radius: 50%; margin-right: 8px;"></div>
+        <strong style="color: #D32F2F;">PAUSED: Popup Detected</strong>
+      </div>
+      <div style="margin-left: 18px; font-size: 11px; line-height: 1.4;">
+        <div>⚠️ ${popupText}</div>
+        <div style="color: #FF9800; margin-top: 4px;">
+          <small>Automation paused. Close popup and re-enable features.</small>
+        </div>
+        ${message.timestamp ? `<div style="color: #777; font-size: 10px; margin-top: 4px;">${message.timestamp}</div>` : ''}
+      </div>
+    `;
+    statusDiv.style.backgroundColor = "#FFEBEE";
+    statusDiv.style.borderLeftColor = "#FF5722";
+    
+    // Uncheck the automation checkboxes
+    const autoRaidCheckbox = document.querySelector('#autoRaid');
+    const autoCombatCheckbox = document.querySelector('#autoCombat');
+    
+    if (autoRaidCheckbox) autoRaidCheckbox.checked = false;
+    if (autoCombatCheckbox) autoCombatCheckbox.checked = false;
+    
+    // Also update the stored settings
+    if (elements.autoRaid) {
+      chrome.storage.sync.set({ autoRaid: false });
+    }
+    if (elements.autoCombat) {
+      chrome.storage.sync.set({ autoCombat: false });
+    }
+  }
+
   // Load saved settings and update status
   chrome.storage.sync.get(storageDefaults, (data) => {
     for (let key of allKeys) {
@@ -219,7 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
               autoCombat: elements.autoCombat?.checked || false
             }).catch(err => {
               console.log('Content script not ready yet:', err);
-              // That's okay - content script will load settings from storage
             });
           }
         });
@@ -230,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // Listen for storage changes (keeps checkboxes in sync)
+  // Listen for storage changes
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync') {
       for (let key in changes) {
@@ -256,7 +294,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Assuming DROP_DATA is defined elsewhere
     if (typeof DROP_DATA !== 'undefined') {
       DROP_DATA.forEach(categoryObj => {
         const header = document.createElement("h3");
@@ -303,6 +340,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add this for raid automation status
     else if (msg.type === "raidStatusUpdate") {
       updateRaidStatusDisplay(msg);
+    }
+    // Add this for popup detection
+    else if (msg.type === "popupDetected") {
+      handlePopupDetected(msg);
     }
   });
 

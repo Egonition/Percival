@@ -4,10 +4,10 @@
   // Flatten all item IDs from DROP_DATA
   const ITEM_IDS = DROP_DATA.flatMap(cat => cat.drops.map(d => d.id));
 
-  // Track which quest drops have already been processed
+  // Track Quest Drops have Been Processed
   let processedDrops = {}; // key: item id
 
-  // Extract numeric ID from image src
+  // Extract Numeric ID from Image Src
   function extractItemIdFromSrc(src) {
     const match = src && src.match(/\/(\d+)\.(png|jpg)/);
     return match ? Number(match[1]) : null;
@@ -18,7 +18,7 @@
       const oldInventory = data.gbfInventory || {};
       const newInventory = { ...oldInventory };
 
-      // --- Standard inventory ---
+      // --- Standard Inventory ---
       const standardSelectors = [
         ".prt-item-inner",
         ".lis-item.treasure",
@@ -44,7 +44,7 @@
         };
       });
 
-      // --- Quest drops ---
+      // --- Quest Drops ---
       document.querySelectorAll(".cnt-treasure-contents .prt-item-list .lis-treasure").forEach(item => {
         const img = item.querySelector("img.prt-thumb, img");
         if (!img) return;
@@ -52,10 +52,10 @@
         const id = extractItemIdFromSrc(img.src);
         if (!id || !ITEM_IDS.includes(id)) return;
 
-        // Skip if already processed
+        // Skip if Already Processed
         if (processedDrops[id]) return;
 
-        // Parse count from .prt-article-count
+        // Parse Count from Selector
         let count = 1;
         const countNode = item.querySelector(".prt-article-count");
         if (countNode) {
@@ -70,30 +70,32 @@
           src: img.src
         };
 
-        // Mark as processed
+        // Mark as Processed
         processedDrops[id] = true;
       });
 
-      // Save inventory and timestamp
+      // Save Inventory and Timestamp
       chrome.storage.local.set({
         gbfInventory: newInventory,
         gbfInventoryUpdated: Date.now()
       });
 
-      // Notify popup
+      // Notify Popup
       chrome.runtime.sendMessage({ type: "inventoryUpdated", inventory: newInventory });
-      console.log("[Percival] Inventory updated:", newInventory);
+      
+      // Debug Log
+      // console.log("[Percival] Inventory Updated:", newInventory);
     });
   }
 
-  // --- Observe page for lazy-loaded items ---
+  // --- Observe Page for Lazy-Loaded Items ---
   const observer = new MutationObserver(() => scrapeInventoryFromDOM());
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // --- Initial scrape ---
+  // --- Initial Scrape ---
   scrapeInventoryFromDOM();
 
-  // --- Reset processedDrops on page unload (new quest) ---
+  // --- Reset processedDrops on Page Unload ---
   window.addEventListener('beforeunload', () => {
     processedDrops = {};
   });

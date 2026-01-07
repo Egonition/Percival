@@ -22,7 +22,11 @@
   "content_scripts": [
     {
       "matches": ["https://game.granbluefantasy.jp/*"],
-      "js": ["data/dropTables.js", "content_inventory.js", "raid-automation.js"],
+      "js": ["error-suppression.js",
+       "data/dropTables.js",
+       "content-inventory.js",
+       "raid-automation.js"
+       ],
       "run_at": "document_idle"
     }
   ],

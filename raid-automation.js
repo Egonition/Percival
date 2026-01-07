@@ -11,7 +11,17 @@ class RaidAutomator {
       totalClicks: 0,
       lastCheck: 0,
       autoCombatActive: false,
-      currentScreen: 'unknown' // Track which screen we're on
+      currentScreen: 'unknown',
+
+      // Human Behavior Tracking
+      lastHumanAction: Date.now(),
+      consecutiveActions: 0,
+      sessionStart: Date.now(),
+      totalRaids: 0,
+      lastMousePosition: { x: 0, y: 0 },
+
+      // Track if Attempted to Click Auto Button in this Battle
+      autoClickAttempted: false
     };
     
     this.cooldowns = {
@@ -19,14 +29,24 @@ class RaidAutomator {
       auto: 0
     };
     
-    // Timing configurations
+    // Timing Configurations with Human-Like Variability
     this.timing = {
-      COOLDOWN: 3000,
-      CHECK_INTERVAL: 1000,
-      RAID_LOAD_MIN: 10000,
-      RAID_LOAD_MAX: 15000,
-      MOUSE_STEPS: 10,
-      STEP_DELAY: 15
+      COOLDOWN: 2000 + Math.random() * 3000, // 2-5 seconds
+      CHECK_INTERVAL: 800 + Math.random() * 700, // 0.8-1.5 seconds
+      RAID_LOAD_MIN: 9000,   // 9 seconds minimum
+      RAID_LOAD_MAX: 16000,  // 16 seconds maximum
+      MOUSE_STEPS_MIN: 8,
+      MOUSE_STEPS_MAX: 20,   // Variable Mouse Movement
+      STEP_DELAY_MIN: 10,
+      STEP_DELAY_MAX: 30,    // Variable Step Timing
+
+      // Human behavior settings
+      HUMAN_DELAY_CHANCE: 0.3, // 30% chance of extra delay
+      HUMAN_DELAY_MIN: 500,    // 0.5 second minimum extra delay
+      HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
+      BREAK_AFTER_ACTIONS: 8 + Math.floor(Math.random() * 8), // Break after 8-15 actions
+      BREAK_MIN: 10000,        // 10 second minimum break
+      BREAK_MAX: 45000         // 45 second maximum break
     };
     
     this.observer = null;
@@ -39,7 +59,7 @@ class RaidAutomator {
     this.setupListeners();
     this.setupObserver();
     
-    // Start if either feature is enabled
+    // Start if Either Feature is Enabled
     if (this.settings.autoRaid || this.settings.autoCombat) {
       this.start();
     }
@@ -69,7 +89,8 @@ class RaidAutomator {
           totalClicks: this.state.totalClicks,
           autoCombatActive: this.state.autoCombatActive,
           currentScreen: this.state.currentScreen,
-          timestamp: new Date().toLocaleTimeString()
+          timestamp: new Date().toLocaleTimeString(),
+          totalRaids: this.state.totalRaids
         });
       }
       return true;
@@ -90,8 +111,23 @@ class RaidAutomator {
   }
   
   setupObserver() {
-    this.observer = new MutationObserver(() => {
+    this.observer = new MutationObserver((mutations) => {
       if (this.state.active) {
+        // Check for Popups in Newly Added Nodes
+        mutations.forEach((mutation) => {
+          if (mutation.addedNodes.length > 0) {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType === 1) { // Element Node
+                // Quick Check for Popups
+                if (this.hasBlockingPopup().found) {
+                  this.handlePopupDetected();
+                  return;
+                }
+              }
+            });
+          }
+        });
+        
         this.detectCurrentScreen();
         this.checkButtons();
       }
@@ -106,32 +142,160 @@ class RaidAutomator {
   detectCurrentScreen() {
     const previousScreen = this.state.currentScreen;
     
-    // Check if we're on raid start screen (has OK button)
+    // Check if on raid start screen
     const okButton = document.querySelector('.btn-usual-ok.se-quest-start');
     const isStartScreen = okButton && this.isVisible(okButton);
     
-    // Check if we're in battle (has auto button)
+    // Check if in battle
     const autoButton = document.querySelector('.btn-auto');
     const isBattleScreen = autoButton && this.isVisible(autoButton);
     
-    // Update screen state
+    // Update Screen State
     if (isStartScreen) {
       this.state.currentScreen = 'start';
-      // Reset auto combat state when back to start screen
+      // Reset Auto Combat State when Back to Start Screen
       if (previousScreen === 'battle' && this.state.autoCombatActive) {
         this.state.autoCombatActive = false;
-        this.updateStatus('Returned to start screen - auto combat reset');
+        this.state.autoClickAttempted = false; // Reset for Next Battle
+        this.state.totalRaids++;
+        this.updateStatus(`Raid ${this.state.totalRaids} complete`);
+        
+        // Check if Need a Human-Like Break
+        if (this.state.consecutiveActions >= this.timing.BREAK_AFTER_ACTIONS) {
+          this.takeHumanBreak();
+        }
       }
     } else if (isBattleScreen) {
       this.state.currentScreen = 'battle';
     } else {
       this.state.currentScreen = 'other';
     }
-    
-    // Log screen changes
-    if (previousScreen !== this.state.currentScreen) {
-      console.log(`Screen changed: ${previousScreen} → ${this.state.currentScreen}`);
+  }
+  
+  hasBlockingPopup() {
+    // Check for Popup Header
+    const popupHeader = document.querySelector('.prt-popup-header');
+    if (popupHeader && this.isVisible(popupHeader)) {
+      // Get Popup Text for Log
+      const popupText = popupHeader.textContent?.trim() || '';
+      
+      // Check for Text Content
+      if (popupText.length === 0) {
+        return { found: false };
+      }
+      
+      const popupTextLower = popupText.toLowerCase();
+      
+      // Check if this is an AP/AAP-related popup
+      const isAPPopup = popupTextLower.includes('ap') || 
+                       popupTextLower.includes('aap');
+      
+      if (isAPPopup) {
+        return {
+          found: true,
+          element: popupHeader,
+          type: 'APPopup',
+          text: popupText
+        };
+      }
+      
+      // Also check for other common popups
+      const isBlockingPopup = popupTextLower.includes('満員') ||
+                             popupTextLower.includes('満室'); 
+      
+      if (isBlockingPopup) {
+        return {
+          found: true,
+          element: popupHeader,
+          type: 'BlockingPopup',
+          text: popupText
+        };
+      }
     }
+    
+    return { found: false };
+  }
+  
+  handlePopupDetected() {
+    if (!this.state.active) return;
+    
+    const popupInfo = this.hasBlockingPopup();
+    if (popupInfo.found) {
+      // Update Local Settings
+      this.settings.autoRaid = false;
+      this.settings.autoCombat = false;
+      
+      this.stop();
+      this.updateStatus(`Popup: ${popupInfo.text}`);
+      
+      // Update Storage to Uncheck the Automation Checkboxes
+      chrome.storage.sync.set({
+        autoRaid: false,
+        autoCombat: false
+      }, () => {
+        console.log('✅ Checkboxes Disabled in Storage Due to Popup.');
+        
+        // Notify Content Script that Settings Changed
+        this.safeSendMessage({
+          type: 'settingsChanged',
+          autoRaid: false,
+          autoCombat: false
+        });
+      });
+      
+      // Send Notification to Popup
+      const status = {
+        type: 'popupDetected',
+        active: false,
+        lastAction: `Popup: ${popupInfo.text}`,
+        popupInfo: popupInfo,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      this.safeSendMessage(status);
+      chrome.storage.local.set({ raidStatus: status });
+      
+      console.warn('⚠️ Popup has been detected.', popupInfo.text);
+    }
+  }
+
+  // Safe Message Sending Function to Prevent Console Errors
+  safeSendMessage(message) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          // Check for Last Error
+          if (chrome.runtime.lastError) {
+            // Silent Ignore Receiving End Error
+            const errorMsg = chrome.runtime.lastError.message || '';
+            if (!errorMsg.includes('Receiving end does not exist')) {
+              console.log('Message Send Error:', errorMsg);
+            }
+          }
+          resolve(response);
+        });
+      } catch (error) {
+        // Silent Ignore Errors
+        resolve();
+      }
+    });
+  }
+  
+  async takeHumanBreak() {
+    if (!this.state.active) return;
+    
+    const breakTime = this.getRandomDelay(
+      this.timing.BREAK_MIN,
+      this.timing.BREAK_MAX
+    );
+    
+    this.updateStatus(`Taking break for ${Math.round(breakTime/1000)}s`);
+    this.state.consecutiveActions = 0;
+    
+    // Simulate Human-Like Inactivity
+    await this.sleep(breakTime);
+    
+    this.updateStatus('Break over, resuming...');
   }
   
   updateSettings(msg) {
@@ -168,10 +332,10 @@ class RaidAutomator {
     if (!this.state.active) return;
     
     this.state.active = false;
-    clearInterval(this.interval);
-    this.interval = null;
-    this.state.autoCombatActive = false;
-    this.state.currentScreen = 'unknown';
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
     this.updateStatus('Automation stopped');
   }
   
@@ -182,46 +346,93 @@ class RaidAutomator {
   checkButtons() {
     if (!this.state.active) return;
     
+    // Check for Popups
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
     const now = Date.now();
     if (now - this.state.lastCheck < 500) return;
     this.state.lastCheck = now;
     
-    // Check for OK button only if autoRaid is enabled AND we're on start screen
+    // Check for OK button if autoRaid is enabled AND on start screen
     if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
       const okButton = this.findOkButton();
       if (okButton) {
+        // Check for Popup before Click
+        if (this.hasBlockingPopup().found) {
+          this.handlePopupDetected();
+          return;
+        }
         this.clickRaidStart(okButton);
       }
     }
     
-    // Check for auto button only if autoCombat is enabled AND we're in battle
-    if (this.settings.autoCombat && this.canClick('auto') && this.state.currentScreen === 'battle') {
+    // Check for auto button if autoCombat is enabled AND in battle
+    if (this.settings.autoCombat && this.canClick('auto') && 
+        this.state.currentScreen === 'battle' && !this.state.autoClickAttempted) {
       const autoButton = this.findAutoButton();
       if (autoButton && !this.state.autoCombatActive) {
+        // Check for Popup before Clicking Auto Button
+        if (this.hasBlockingPopup().found) {
+          this.handlePopupDetected();
+          return;
+        }
         this.clickAutoCombat(autoButton);
       }
     }
   }
   
-  clickRaidStart(button) {
+  async clickRaidStart(button) {
+    // Check for Popups
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
     this.cooldowns.ok = Date.now();
     
-    // Reset auto combat state when starting new raid
+    // Reset Auto Combat State when Starting New Battle
     this.state.autoCombatActive = false;
+    this.state.autoClickAttempted = false; // Reset for New Battle
+    this.state.consecutiveActions++;
     
-    // Click with mouse simulation
-    this.simulateClick(button, 'OK (Start Raid)');
+    // Add Human-Like Delay before Action
+    if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
+      const extraDelay = this.getRandomDelay(
+        this.timing.HUMAN_DELAY_MIN,
+        this.timing.HUMAN_DELAY_MAX
+      );
+      this.updateStatus(`Thinking... (+${Math.round(extraDelay/1000)}s)`);
+      await this.sleep(extraDelay);
+      
+      // Check for Popup during Delay
+      if (this.hasBlockingPopup().found) {
+        this.handlePopupDetected();
+        return;
+      }
+    }
     
-    // If auto combat is also enabled, schedule it after raid loads
+    // Check for Popup before Click 
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
+    // Click with Human-Like Mouse Movement
+    await this.simulateHumanClick(button, 'OK (Start Raid)');
+    
+    // If Auto Combat is Enabled, Schedule after Battle Loads
     if (this.settings.autoCombat) {
       const raidLoadTime = this.getRandomDelay(
         this.timing.RAID_LOAD_MIN,
         this.timing.RAID_LOAD_MAX
       );
       
-      this.updateStatus(`Starting raid... Auto combat in ${Math.round(raidLoadTime/1000)}s`);
+      this.updateStatus(`Starting raid... Auto in ${Math.round(raidLoadTime/1000)}s`);
       
-      // Schedule auto combat click after raid loads
+      // Schedule Auto Button Click after Raid Loads
       setTimeout(() => {
         this.checkAutoButton();
       }, raidLoadTime);
@@ -230,30 +441,124 @@ class RaidAutomator {
     }
   }
   
-  clickAutoCombat(button) {
-    this.cooldowns.auto = Date.now();
-    
-    // Check if button is already active before clicking
-    if (this.isAutoButtonActive(button)) {
-      this.state.autoCombatActive = true;
-      this.updateStatus('Auto combat already active');
+  async clickAutoCombat(button) {
+    // Check for Popup
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
       return;
     }
     
-    this.simulateClick(button, 'FULL Auto');
-    this.state.autoCombatActive = true;
-    this.updateStatus('Auto combat enabled');
+    // Mark Attempt to Click Auto Button
+    this.state.autoClickAttempted = true;
+    this.cooldowns.auto = Date.now();
+    this.state.consecutiveActions++;
+    
+    // Add Human-Like Delay before Action
+    if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
+      const extraDelay = this.getRandomDelay(
+        this.timing.HUMAN_DELAY_MIN,
+        this.timing.HUMAN_DELAY_MAX
+      );
+      await this.sleep(extraDelay);
+      
+      // Check for Popup during Delay
+      if (this.hasBlockingPopup().found) {
+        this.handlePopupDetected();
+        return;
+      }
+    }
+    
+    // Get Click Coordinates within the Button
+    const rect = button.getBoundingClientRect();
+    const padding = 5;
+    const clickableLeft = rect.left + padding;
+    const clickableRight = rect.right - padding;
+    const clickableTop = rect.top + padding;
+    const clickableBottom = rect.bottom - padding;
+    const clickableWidth = clickableRight - clickableLeft;
+    const clickableHeight = clickableBottom - clickableTop;
+    
+    // Choose Random Point within the Safe Area
+    let x, y;
+    const hotspotBias = Math.random();
+    
+    if (hotspotBias < 0.3) {
+      // 30% chance: Click Near Center
+      const centerX = clickableLeft + clickableWidth / 2;
+      const centerY = clickableTop + clickableHeight / 2;
+      const variance = Math.min(clickableWidth, clickableHeight) * 0.2;
+      x = centerX + (Math.random() - 0.5) * variance;
+      y = centerY + (Math.random() - 0.5) * variance;
+    } else if (hotspotBias < 0.6) {
+      // 30% chance: Click in Top-Left Quadrant
+      x = clickableLeft + Math.random() * (clickableWidth * 0.5);
+      y = clickableTop + Math.random() * (clickableHeight * 0.5);
+    } else {
+      // 40% chance: Completely Random within Safe Area
+      x = clickableLeft + Math.random() * clickableWidth;
+      y = clickableTop + Math.random() * clickableHeight;
+    }
+    
+    // Add Random Offset
+    x += (Math.random() - 0.5) * 4;
+    y += (Math.random() - 0.5) * 4;
+    
+    // Ensure Coordinates are within Safe Bounds
+    x = Math.max(clickableLeft, Math.min(x, clickableRight));
+    y = Math.max(clickableTop, Math.min(y, clickableBottom));
+    
+    // Human-Like Mouse Movement to the Point
+    await this.simulateHumanMouseMovement(x, y);
+    
+    // Variable Click Timing
+    const clickDelay = this.getRandomDelay(50, 200);
+    await this.sleep(clickDelay);
+    
+    // Micro Adjustment
+    if (Math.random() < 0.4) {
+      const microX = x + (Math.random() - 0.5) * 6;
+      const microY = y + (Math.random() - 0.5) * 6;
+      const microEvent = new MouseEvent('mousemove', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: microX,
+        clientY: microY
+      });
+      document.dispatchEvent(microEvent);
+      await this.sleep(20 + Math.random() * 50);
+    }
+    
+    // Perform Click
+    const clicked = await this.performSingleReliableClick(button, x, y, 'FULL Auto');
+    
+    if (clicked) {
+      this.state.autoCombatActive = true;
+      this.updateStatus('Auto combat enabled');
+      console.log('✅ Auto combat clicked successfully (once)');
+    } else {
+      // Mark Click as Attempted to Prevent Endless Retries
+      this.state.autoCombatActive = true;
+      this.updateStatus('Auto combat has been enabled.');
+      console.log('⚠️ Auto combat has been marked as enabled.');
+    }
   }
   
   checkAutoButton() {
+    // Check for Popup
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
     const autoButton = this.findAutoButton();
-    if (autoButton && !this.state.autoCombatActive) {
+    if (autoButton && !this.state.autoClickAttempted && !this.state.autoCombatActive) {
       this.clickAutoCombat(autoButton);
-    } else if (!autoButton) {
-      // Auto button not found yet, retry after 1 second
+    } else if (!autoButton && !this.state.autoClickAttempted) {
+      // Auto Button Not Found, Retry after Random Delay
       setTimeout(() => {
         this.checkAutoButton();
-      }, 1000);
+      }, 1000 + Math.random() * 2000);
     }
   }
   
@@ -276,73 +581,257 @@ class RaidAutomator {
     return style.display !== 'none' &&
            style.visibility !== 'hidden' &&
            rect.width > 0 &&
-           rect.height > 0;
-  }
-  
-  isAutoButtonActive(button) {
-    if (!button) return false;
-    
-    // Check various indicators that auto is already active
-    if (button.classList.contains('active')) {
-      return true;
-    }
-    
-    const style = window.getComputedStyle(button);
-    const bgColor = style.backgroundColor;
-    const activeColors = [
-      'rgb(0, 100, 0)',
-      'rgb(46, 125, 50)',
-      'rgb(76, 175, 80)',
-      'rgb(56, 142, 60)',
-      'rgb(27, 94, 32)'
-    ];
-    
-    if (activeColors.some(color => bgColor.includes(color))) {
-      return true;
-    }
-    
-    const buttonText = button.textContent || '';
-    if (buttonText.includes('ON') || buttonText.includes('On') || buttonText.includes('Active')) {
-      return true;
-    }
-    
-    if (button.getAttribute('data-active') === 'true' || 
-        button.getAttribute('data-state') === 'active') {
-      return true;
-    }
-    
-    return false;
+           rect.height > 0 &&
+           rect.top >= 0 &&
+           rect.left >= 0;
   }
   
   canClick(type) {
     return Date.now() - this.cooldowns[type] > this.timing.COOLDOWN;
   }
   
-  simulateClick(element, actionName) {
+  async simulateHumanClick(element, actionName) {
     if (!element) return;
     
+    // Check for Popup at the Start of the Click
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
     const rect = element.getBoundingClientRect();
-    const x = rect.left + Math.random() * rect.width;
-    const y = rect.top + Math.random() * rect.height;
     
-    this.moveMouseTo(x, y);
+    // Human-like Target
+    const padding = 5;
+    const clickableLeft = rect.left + padding;
+    const clickableRight = rect.right - padding;
+    const clickableTop = rect.top + padding;
+    const clickableBottom = rect.bottom - padding;
+    const clickableWidth = clickableRight - clickableLeft;
+    const clickableHeight = clickableBottom - clickableTop;
     
-    setTimeout(() => {
-      this.performClick(element, x, y);
-      this.state.totalClicks++;
-      this.sendStatusUpdate(actionName);
-    }, 100 + Math.random() * 200);
+    let x, y;
+    
+    // Add Hotspot Bias - Humans Tend to Click Certain Areas More
+    const hotspotBias = Math.random();
+    if (hotspotBias < 0.3) {
+      // 30% chance: Click Near Center
+      const centerX = clickableLeft + clickableWidth / 2;
+      const centerY = clickableTop + clickableHeight / 2;
+      const variance = Math.min(clickableWidth, clickableHeight) * 0.2;
+      x = centerX + (Math.random() - 0.5) * variance;
+      y = centerY + (Math.random() - 0.5) * variance;
+    } else if (hotspotBias < 0.6) {
+      // 30% chance: Click in Top-Left Quadrant
+      x = clickableLeft + Math.random() * (clickableWidth * 0.5);
+      y = clickableTop + Math.random() * (clickableHeight * 0.5);
+    } else {
+      // 40% chance: Completely Random within Safe Area
+      x = clickableLeft + Math.random() * clickableWidth;
+      y = clickableTop + Math.random() * clickableHeight;
+    }
+    
+    // Add Random Offset (±2px)
+    x += (Math.random() - 0.5) * 4;
+    y += (Math.random() - 0.5) * 4;
+    
+    // Ensure Coordinates are within Safe Bounds
+    x = Math.max(clickableLeft, Math.min(x, clickableRight));
+    y = Math.max(clickableTop, Math.min(y, clickableBottom));
+    
+    // Save Mouse Position for Next Movement
+    this.state.lastMousePosition = { x, y };
+    
+    // Human-like Mouse Movement to the Randomized Point
+    await this.simulateHumanMouseMovement(x, y);
+    
+    // Check for Popup after Mouse Movement
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
+    // Variable Click Time
+    const clickDelay = this.getRandomDelay(50, 200); // 50-200ms delay
+    await this.sleep(clickDelay);
+    
+    // Check for Popup during Click Delay
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
+    // Micro Adjust Mouse before Click
+    if (Math.random() < 0.4) {
+      const microX = x + (Math.random() - 0.5) * 6;
+      const microY = y + (Math.random() - 0.5) * 6;
+      const microEvent = new MouseEvent('mousemove', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: microX,
+        clientY: microY
+      });
+      document.dispatchEvent(microEvent);
+      await this.sleep(20 + Math.random() * 50);
+      
+      // Check for Popup during Micro Adjust
+      if (this.hasBlockingPopup().found) {
+        this.handlePopupDetected();
+        return;
+      }
+    }
+    
+    // Perform Click
+    await this.performSingleReliableClick(element, x, y, actionName);
+    this.state.totalClicks++;
+    
+    // Update Status
+    this.sendStatusUpdate(actionName);
+    
+    // Debug Log
+    console.log(`📍 ${actionName} at ${Math.round(x)},${Math.round(y)} (${Math.round(((x - rect.left) / rect.width) * 100)}%,${Math.round(((y - rect.top) / rect.height) * 100)}%)`);
   }
   
-  moveMouseTo(targetX, targetY) {
-    const startX = Math.random() * window.innerWidth;
-    const startY = Math.random() * window.innerHeight;
-    
-    for (let i = 0; i <= this.timing.MOUSE_STEPS; i++) {
-      const progress = i / this.timing.MOUSE_STEPS;
-      const currentX = startX + (targetX - startX) * progress;
-      const currentY = startY + (targetY - startY) * progress;
+  async performSingleReliableClick(element, x, y, actionName = '') {
+    try {
+      // Validate Coordinates are Finite Numbers
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        console.error(`Invalid coordinates for ${actionName}: x=${x}, y=${y}`);
+        
+        // Fallback to Center of Element
+        const rect = element.getBoundingClientRect();
+        x = rect.left + rect.width / 2;
+        y = rect.top + rect.height / 2;
+        console.log(`Using fallback coordinates: x=${x}, y=${y}`);
+      }
       
+      // Human-like Click Timing
+      const mouseDownDuration = this.getRandomDelay(30, 80);
+      const betweenDownUp = this.getRandomDelay(5, 20);
+      
+      // Mouse Down
+      const mouseDown = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: 1
+      });
+      
+      element.dispatchEvent(mouseDown);
+      await this.sleep(mouseDownDuration);
+      
+      // Mouse Up
+      const mouseUp = new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: 0
+      });
+      
+      // Click Event
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0
+      });
+      
+      element.dispatchEvent(mouseUp);
+      await this.sleep(betweenDownUp);
+      element.dispatchEvent(clickEvent);
+      
+      // Try the Click Method
+      if (typeof element.click === 'function') {
+        await this.sleep(10);
+        element.click();
+      }
+      
+      console.log(`✅ ${actionName} click successful at ${Math.round(x)},${Math.round(y)}`);
+      return true;
+    } catch (error) {
+      console.log(`❌ Click failed for ${actionName}:`, error);
+      return false;
+    }
+  }
+  
+  async simulateHumanMouseMovement(targetX, targetY) {
+    // Start from Realistic Positions
+    let startX, startY;
+    
+    // Humans Move from Previous Interaction Points
+    if (Math.random() < 0.6 && this.state.lastMousePosition.x > 0) {
+      // 60% chance: Start from Last Known Mouse Position
+      startX = this.state.lastMousePosition.x;
+      startY = this.state.lastMousePosition.y;
+    } else if (Math.random() < 0.8) {
+      // 20% chance: Start from Typical Resting Position
+      startX = window.innerWidth * 0.8 + Math.random() * window.innerWidth * 0.2;
+      startY = window.innerHeight * 0.8 + Math.random() * window.innerHeight * 0.2;
+    } else {
+      // 20% chance: Start from Completely Random Position
+      startX = Math.random() * window.innerWidth;
+      startY = Math.random() * window.innerHeight;
+    }
+    
+    // Variable Number of Steps
+    const steps = Math.floor(this.getRandomDelay(
+      this.timing.MOUSE_STEPS_MIN,
+      this.timing.MOUSE_STEPS_MAX
+    ));
+    
+    // Choose Path Type
+    const pathType = Math.random();
+    let pathFunction;
+    
+    if (pathType < 0.4) {
+      // 40%: Direct but Slight Curve
+      pathFunction = this.easeInOutQuad;
+    } else if (pathType < 0.7) {
+      // 30%: More Curve
+      pathFunction = this.easeInOutCubic;
+    } else if (pathType < 0.9) {
+      // 20%: Linear
+      pathFunction = (t) => t;
+    } else {
+      // 10%: Overshoot and Correction
+      pathFunction = this.easeOutBack;
+    }
+    
+    // Move In Steps
+    for (let i = 0; i <= steps; i++) {
+      const progress = i / steps;
+      const easedProgress = pathFunction(progress);
+      
+      let currentX, currentY;
+      
+      // For Overshoot Path Handle
+      if (pathFunction === this.easeOutBack) {
+        const overshoot = 0.2;
+        const overshootProgress = progress < 0.8 ? progress / 0.8 : 1;
+        const overshootX = startX + (targetX - startX) * 1.2;
+        const overshootY = startY + (targetY - startY) * 1.2;
+        
+        if (progress < 0.8) {
+          currentX = startX + (overshootX - startX) * easedProgress;
+          currentY = startY + (overshootY - startY) * easedProgress;
+        } else {
+          const correctionProgress = (progress - 0.8) / 0.2;
+          const correctionEase = this.easeInOutQuad(correctionProgress);
+          currentX = overshootX + (targetX - overshootX) * correctionEase;
+          currentY = overshootY + (targetY - overshootY) * correctionEase;
+        }
+      } else {
+        currentX = startX + (targetX - startX) * easedProgress;
+        currentY = startY + (targetY - startY) * easedProgress;
+      }
+      
+      // Dispatch Mouse Move Event
       const event = new MouseEvent('mousemove', {
         view: window,
         bubbles: true,
@@ -352,44 +841,52 @@ class RaidAutomator {
       });
       
       document.dispatchEvent(event);
+      
+      // Variable Delay between Steps
+      if (i < steps) {
+        const stepDelay = this.getRandomDelay(
+          this.timing.STEP_DELAY_MIN,
+          this.timing.STEP_DELAY_MAX
+        );
+        await this.sleep(stepDelay);
+      }
+    }
+    
+    // Final Micro Adjust
+    if (Math.random() < 0.3) {
+      await this.sleep(30 + Math.random() * 70);
+      const finalX = targetX + (Math.random() - 0.5) * 6;
+      const finalY = targetY + (Math.random() - 0.5) * 6;
+      
+      const finalEvent = new MouseEvent('mousemove', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: finalX,
+        clientY: finalY
+      });
+      document.dispatchEvent(finalEvent);
     }
   }
   
-  performClick(element, x, y) {
-    const mouseDown = new MouseEvent('mousedown', {
-      view: window,
-      bubbles: true,
-      cancelable: true,
-      clientX: x,
-      clientY: y,
-      buttons: 1
-    });
-    
-    setTimeout(() => {
-      const mouseUp = new MouseEvent('mouseup', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y
-      });
-      
-      const clickEvent = new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y
-      });
-      
-      element.dispatchEvent(mouseDown);
-      element.dispatchEvent(mouseUp);
-      element.dispatchEvent(clickEvent);
-      
-      if (typeof element.click === 'function') {
-        element.click();
-      }
-    }, 50 + Math.random() * 100);
+  // Easing Function for Natural Movement
+  easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+  
+  easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+  
+  easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+  
+  // Utility Sleep Function
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
   
   sendStatusUpdate(actionName) {
@@ -400,10 +897,11 @@ class RaidAutomator {
       totalClicks: this.state.totalClicks,
       autoCombatActive: this.state.autoCombatActive,
       currentScreen: this.state.currentScreen,
+      totalRaids: this.state.totalRaids,
       timestamp: new Date().toLocaleTimeString()
     };
     
-    chrome.runtime.sendMessage(status).catch(() => {});
+    this.safeSendMessage(status);
     chrome.storage.local.set({ raidStatus: status });
   }
   
@@ -417,10 +915,11 @@ class RaidAutomator {
       totalClicks: this.state.totalClicks,
       autoCombatActive: this.state.autoCombatActive,
       currentScreen: this.state.currentScreen,
+      totalRaids: this.state.totalRaids,
       timestamp: new Date().toLocaleTimeString()
     };
     
-    chrome.runtime.sendMessage(status).catch(() => {});
+    this.safeSendMessage(status);
     chrome.storage.local.set({ raidStatus: status });
   }
 }
