@@ -57,22 +57,22 @@ class RaidAutomator {
       HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
 
       // Break Probability Settings
-      BREAK_CHANCE_PER_RAID: 0.15, // 15% chance to take a break after any raid
-      MIN_RAIDS_BETWEEN_BREAKS: 2,  // At least 2 raids between breaks
-      MAX_RAIDS_BETWEEN_BREAKS: 8,  // At most 8 raids between breaks
+      BREAK_CHANCE_PER_RAID: 0.18, // 18% chance to take a break after any raid
+      MIN_RAIDS_BETWEEN_BREAKS: 3,  // At least 3 raids between breaks
+      MAX_RAIDS_BETWEEN_BREAKS: 12,  // At most 12 raids between breaks
       
       // Break Duration Settings
-      SHORT_BREAK_MIN: 10000,     // 10 seconds
-      SHORT_BREAK_MAX: 30000,     // 30 seconds
-      MEDIUM_BREAK_MIN: 45000,    // 45 seconds
-      MEDIUM_BREAK_MAX: 90000,    // 1.5 minutes
-      LONG_BREAK_MIN: 120000,     // 2 minutes
-      LONG_BREAK_MAX: 300000,     // 5 minutes
+      SHORT_BREAK_MIN: 30000,     // 30 seconds
+      SHORT_BREAK_MAX: 120000,    // 2 minutes
+      MEDIUM_BREAK_MIN: 120000,    // 2 minutes
+      MEDIUM_BREAK_MAX: 300000,    // 5 minutes
+      LONG_BREAK_MIN: 600000,     // 10 minutes
+      LONG_BREAK_MAX: 1200000,     // 20 minutes
       
       // Break Type Probabilities
-      SHORT_BREAK_CHANCE: 0.6,    // 60% short breaks
-      MEDIUM_BREAK_CHANCE: 0.3,   // 30% medium breaks
-      LONG_BREAK_CHANCE: 0.1      // 10% long breaks
+      SHORT_BREAK_CHANCE: 0.7,    // 70% short breaks (most common)
+      MEDIUM_BREAK_CHANCE: 0.25,   // 25% medium breaks
+      LONG_BREAK_CHANCE: 0.05      // 5% long breaks (rare)
     };
     
     this.observer = null;
