@@ -182,7 +182,8 @@ class RaidAutomator {
           this.state.breakStartTime = saved.breakStartTime || 0;
           this.state.breakEndTime = saved.breakEndTime || 0;
           
-          console.log(`📊 Loaded: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+          // Debug Log
+          // console.log(`📊 Loaded: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
         }
         resolve();
       });
@@ -202,7 +203,8 @@ class RaidAutomator {
     };
 
     chrome.storage.local.set({ raidAutomatorState: stateToSave }, () => {
-      console.log(`💾 Saved: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+      // Debug Log
+      // console.log(`💾 Saved: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
     });
   }
 
@@ -340,7 +342,9 @@ class RaidAutomator {
     this.savePersistentState();
     
     this.updateStatus(`Raid ${this.state.totalRaids} complete! (${durationSeconds}s)`);
-    console.log(`✅ Raid ${this.state.totalRaids} completed in ${durationSeconds} seconds`);
+
+    // Debug Log
+    console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSeconds} Seconds.`);
     
     // Check if it's time for a break
     if (this.shouldTakeBreak()) {
@@ -354,7 +358,8 @@ class RaidAutomator {
     // Log Average Raid Time Every 10 Raids
     if (this.state.totalRaids % 10 === 0) {
       const avgDuration = this.state.raidDurations.reduce((a, b) => a + b, 0) / this.state.raidDurations.length;
-      console.log(`📊 Average raid time: ${Math.round(avgDuration/1000)}s`);
+      // Debug Log
+      console.log(`📊 Average Raid Time: ${Math.round(avgDuration/1000)}s`);
     }
   }
   
@@ -419,7 +424,8 @@ class RaidAutomator {
         autoRaid: false,
         autoCombat: false
       }, () => {
-        console.log('✅ Checkboxes Disabled in Storage Due to Popup.');
+        // Console Log
+        console.log('🛑 Automation disabled.');
         
         // Notify Background Script of Settings Change
         this.safeSendMessage({
@@ -441,7 +447,8 @@ class RaidAutomator {
       this.safeSendMessage(status);
       chrome.storage.local.set({ raidStatus: status });
       
-      console.warn('⚠️ Popup has been detected.', popupInfo.text);
+      // Console Warning
+      console.warn('⚠️ Popup detected.', popupInfo.text);
     }
   }
 
@@ -455,7 +462,8 @@ class RaidAutomator {
             // Silent Ignore Receiving End Error
             const errorMsg = chrome.runtime.lastError.message || '';
             if (!errorMsg.includes('Receiving end does not exist')) {
-              console.log('Message Send Error:', errorMsg);
+              // Debug Log
+              // console.log('Message Send Error:', errorMsg);
             }
           }
           resolve(response);
@@ -502,7 +510,7 @@ class RaidAutomator {
     const breakSeconds = Math.round((breakTime % 60000) / 1000);
       
     this.updateStatus(`${breakType} break: ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
-    console.log(`⏸️ Taking ${breakType} break after ${this.state.totalRaids} raids for ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
+    console.log(`⏸️ Taking ${breakType.charAt(0).toUpperCase() + breakType.slice(1)} Break after ${this.state.totalRaids} Raids for ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
 
     // Save State
     await this.savePersistentState();
@@ -572,7 +580,7 @@ class RaidAutomator {
       clearInterval(this.interval);
       this.interval = null;
     }
-    this.updateStatus('Automation stopped');
+    this.updateStatus('Automation Stopped');
   }
   
   getRandomDelay(min, max) {
@@ -667,7 +675,7 @@ class RaidAutomator {
     }
     
     // Perform Click
-    await this.simulateHumanClick(button, 'OK (Start Raid)');
+    await this.simulateHumanClick(button, 'OK');
     
     // Schedule Auto Combat if Enabled
     if (this.settings.autoCombat) {
@@ -785,12 +793,13 @@ class RaidAutomator {
     if (clicked) {
       this.state.autoCombatActive = true;
       this.updateStatus('Auto Combat Enabled');
-      console.log('✅ Auto Combat Clicked Successfully');
     } else {
       // Mark Click as Attempted to Prevent Endless Retries
       this.state.autoCombatActive = true;
-      this.updateStatus('Auto combat has been enabled.');
-      console.log('⚠️ Auto combat has been marked as enabled.');
+      this.updateStatus('Auto Combat Enabled.');
+
+      // Debug Log
+      // console.log('⚠️ Auto combat has been marked as enabled.');
     }
   }
   
@@ -950,7 +959,7 @@ class RaidAutomator {
     this.sendStatusUpdate(actionName);
     
     // Debug Log
-    console.log(`📍 ${actionName} at ${Math.round(x)},${Math.round(y)} (${Math.round(((x - rect.left) / rect.width) * 100)}%,${Math.round(((y - rect.top) / rect.height) * 100)}%)`);
+    // console.log(`📍 ${actionName} at ${Math.round(x)},${Math.round(y)} (${Math.round(((x - rect.left) / rect.width) * 100)}%,${Math.round(((y - rect.top) / rect.height) * 100)}%)`);
   }
   
   async performSingleReliableClick(element, x, y, actionName = '') {
@@ -963,7 +972,9 @@ class RaidAutomator {
         const rect = element.getBoundingClientRect();
         x = rect.left + rect.width / 2;
         y = rect.top + rect.height / 2;
-        console.log(`Using fallback coordinates: x=${x}, y=${y}`);
+
+        // Debug Log
+        // console.log(`Using fallback coordinates: x=${x}, y=${y}`);
       }
       
       // Human-like Click Timing
@@ -1012,10 +1023,15 @@ class RaidAutomator {
         element.click();
       }
       
-      console.log(`✅ ${actionName} Click Successful at ${Math.round(x)},${Math.round(y)}`);
+      // Debug Log
+      // console.log(`✅ ${actionName} Click at ${Math.round(x)},${Math.round(y)}`);
+
       return true;
     } catch (error) {
-      console.log(`❌ Click failed for ${actionName}:`, error);
+
+      // Debug Log
+      // console.log(`❌ Click failed for ${actionName}:`, error);
+
       return false;
     }
   }

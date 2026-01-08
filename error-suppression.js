@@ -1,7 +1,8 @@
 (function() {
   'use strict';
   
-  console.log('Error Suppression Enabled');
+  // Debug Logging
+  // console.log('Error Suppression Enabled');
   
   // Monkey Patch
   const originalSendMessage = chrome.runtime.sendMessage;
