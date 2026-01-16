@@ -306,10 +306,14 @@ class RaidAutomator {
       this.state.currentScreen = 'battle';
       
       // Mark Raid as In Progress
-      if (!this.state.autoCombatActive && !this.state.raidInProgress) {
+      if (!this.state.raidInProgress) {
         this.state.raidInProgress = true;
         this.state.lastRaidStartTime = Date.now();
         this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
+      }
+
+      if (!this.state.autoCombatActive) {
+        this.state.autoClickAttempted = false;
       }
       
     } else {
@@ -402,6 +406,22 @@ class RaidAutomator {
           text: popupText
         };
       }
+
+      // Check for Access Verification Popups
+      const isAccessVerification = popupTextLower.includes('access verification') ||
+                                  popupTextLower.includes('access verification!') ||
+                                  popupTextLower.includes('アクセス確認') ||
+                                  popupTextLower.includes('認証');
+      
+      if (isAccessVerification) {
+        return {
+          found: true,
+          element: popupHeader,
+          type: 'AccessVerification',
+          text: popupText
+        };
+      }
+
     }
     
     return { found: false };
@@ -417,7 +437,15 @@ class RaidAutomator {
       this.settings.autoCombat = false;
       
       this.stop();
-      this.updateStatus(`Popup: ${popupInfo.text}`);
+
+      let statusMessage;
+      if (popupInfo.type === 'AccessVerification') {
+        statusMessage = `Access Verification Required. Please Complete the Verification Manually.`;
+      } else {
+        statusMessage = `Popup Detected: ${popupInfo.text}`;
+      }
+
+      this.updateStatus(statusMessage);
       
       // Disable Checkboxes in Storage
       chrome.storage.sync.set({
@@ -425,7 +453,7 @@ class RaidAutomator {
         autoCombat: false
       }, () => {
         // Console Log
-        console.log('🛑 Automation disabled.');
+        console.log('🛑 Automation Disabled.');
         
         // Notify Background Script of Settings Change
         this.safeSendMessage({
@@ -439,7 +467,7 @@ class RaidAutomator {
       const status = {
         type: 'popupDetected',
         active: false,
-        lastAction: `Popup: ${popupInfo.text}`,
+        lastAction: statusMessage,
         popupInfo: popupInfo,
         timestamp: new Date().toLocaleTimeString()
       };
@@ -448,7 +476,7 @@ class RaidAutomator {
       chrome.storage.local.set({ raidStatus: status });
       
       // Console Warning
-      console.warn('⚠️ Popup detected.', popupInfo.text);
+      console.warn('⚠️ Popup Detected.', popupInfo.text);
     }
   }
 
@@ -622,7 +650,7 @@ class RaidAutomator {
     if (this.settings.autoCombat && this.canClick('auto') && 
         this.state.currentScreen === 'battle' && !this.state.autoClickAttempted) {
       const autoButton = this.findAutoButton();
-      if (autoButton && !this.state.autoCombatActive) {
+      if (autoButton) {
         // Check for Popup before Clicking Auto Button
         if (this.hasBlockingPopup().found) {
           this.handlePopupDetected();
@@ -676,23 +704,9 @@ class RaidAutomator {
     
     // Perform Click
     await this.simulateHumanClick(button, 'OK');
-    
-    // Schedule Auto Combat if Enabled
-    if (this.settings.autoCombat) {
-      const raidLoadTime = this.getRandomDelay(
-        this.timing.RAID_LOAD_MIN,
-        this.timing.RAID_LOAD_MAX
-      );
-      
-      this.updateStatus(`Starting raid... Auto in ${Math.round(raidLoadTime/1000)}s`);
-      
-      // Check Auto Button after Delay
-      setTimeout(() => {
-        this.checkAutoButton();
-      }, raidLoadTime);
-    } else {
-      this.updateStatus('Raid started');
-    }
+
+    // Update Status
+    this.updateStatus(`Raid Started - Waiting for Battle Screen...`);
   }
   
   async clickAutoCombat(button) {
@@ -800,24 +814,6 @@ class RaidAutomator {
 
       // Debug Log
       // console.log('⚠️ Auto combat has been marked as enabled.');
-    }
-  }
-  
-  checkAutoButton() {
-    // Check for Popup
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    const autoButton = this.findAutoButton();
-    if (autoButton && !this.state.autoClickAttempted && !this.state.autoCombatActive) {
-      this.clickAutoCombat(autoButton);
-    } else if (!autoButton && !this.state.autoClickAttempted) {
-      // Retry after Short Delay if Auto Button Not Found
-      setTimeout(() => {
-        this.checkAutoButton();
-      }, 1000 + Math.random() * 2000);
     }
   }
   
