@@ -32,7 +32,10 @@ class RaidAutomator {
       lastBreakTime: 0,
       
       // Auto Combat Click Tracking
-      autoClickAttempted: false
+      autoClickAttempted: false,
+
+      // UI State Tracking
+      hasSeenAutoButton: false
     };
     
     this.cooldowns = {
@@ -301,6 +304,7 @@ class RaidAutomator {
       this.state.raidInProgress = false;
       this.state.autoCombatActive = false;
       this.state.autoClickAttempted = false;
+      this.state.hasSeenAutoButton = false;
       
     } else if (isBattleScreen) {
       this.state.currentScreen = 'battle';
@@ -310,10 +314,15 @@ class RaidAutomator {
         this.state.raidInProgress = true;
         this.state.lastRaidStartTime = Date.now();
         this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
+
+        // Reset Auto Combat UI State
+        this.state.hasSeenAutoButton = false;
+        this.state.autoCombatActive = false;
+        this.state.autoClickAttempted = false;
       }
 
-      if (!this.state.autoCombatActive) {
-        this.state.autoClickAttempted = false;
+      if (!this.state.hasSeenAutoButton) {
+        this.state.hasSeenAutoButton = true;
       }
       
     } else {
@@ -408,10 +417,10 @@ class RaidAutomator {
       }
 
       // Check for Access Verification Popups
-      const isAccessVerification = popupTextLower.includes('access verification') ||
-                                  popupTextLower.includes('access verification!') ||
-                                  popupTextLower.includes('アクセス確認') ||
-                                  popupTextLower.includes('認証');
+      const isAccessVerification = popupTextLower.includes('access') ||
+                                  popupTextLower.includes('verification') ||
+                                  popupTextLower.includes('アクセス') ||
+                                  popupTextLower.includes('確認');
       
       if (isAccessVerification) {
         return {
@@ -648,7 +657,10 @@ class RaidAutomator {
     
     // Check for Auto button if autoCombat is enabled AND in battle screen
     if (this.settings.autoCombat && this.canClick('auto') && 
-        this.state.currentScreen === 'battle' && !this.state.autoClickAttempted) {
+        this.state.currentScreen === 'battle' &&
+        this.state.hasSeenAutoButton &&
+        !this.state.autoClickAttempted &&
+        !this.state.autoCombatActive) {
       const autoButton = this.findAutoButton();
       if (autoButton) {
         // Check for Popup before Clicking Auto Button
