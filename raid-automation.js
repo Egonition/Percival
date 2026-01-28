@@ -156,12 +156,14 @@ class RaidAutomator {
     return new Promise(resolve => {
       chrome.storage.local.get(['breakManagerState'], data => {
         if (data.breakManagerState && this.breakManager) {
-          // console.log('🔄 Loading Break Manager State:', data.breakManagerState);
+          console.log('🔄 Loading Break Manager State:', data.breakManagerState);
+
+          if (this.breakManager.settings.enableBreaks) {
+            const status = this.breakManager.getStatus();
+            console.log(`    - Raids Since Last Break: ${status.raidsSinceLastBreak}`);
+          }
+
           this.breakManager.loadState(data.breakManagerState);
-          
-          const status = this.breakManager.getStatus();
-          // Debug Log
-          // console.log(`   - Raids Since Last Break After Load: ${status.raidsSinceLastBreak}`);
         } else {
           // Debug Log
           // console.log('ℹ️ No Break Manager State Found to Load.');
@@ -353,13 +355,6 @@ class RaidAutomator {
     
     this.updateStatus(`Raid ${this.state.totalRaids} Complete! (${durationSeconds}s)`);
     console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSeconds} Seconds.`);
-
-    if (this.breakManager) {
-      const beforeStatus = this.breakManager.getStatus();
-      // Debug Log
-      // console.log(`  - Raids Since Last Break Before:', ${beforeStatus.raidsSinceLastBreak}`);
-      // console.log(`  - Total Raids:', ${this.state.totalRaids}`);
-    }
 
     // Check for Break
     if (this.breakManager.onRaidComplete()) {

@@ -1,5 +1,4 @@
 'use strict';
-
 class BreakManager {
   constructor(settings = {}) {
     this.settings = {
@@ -46,7 +45,6 @@ class BreakManager {
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
     
-    // If breaks are disabled, end any ongoing break
     if (!this.settings.enableBreaks && this.state.isOnBreak) {
       this.endBreak();
     }
@@ -59,7 +57,7 @@ class BreakManager {
         isOnBreak: this.state.isOnBreak,
         breakStartTime: this.state.breakStartTime,
         breakEndTime: this.state.breakEndTime,
-        raidsSinceLastBreak: this.state.raidsSinceLastBreak, // THIS IS CRITICAL!
+        raidsSinceLastBreak: this.state.raidsSinceLastBreak,
         lastBreakTime: this.state.lastBreakTime,
         totalBreaks: this.state.totalBreaks
       }
@@ -70,10 +68,14 @@ class BreakManager {
     if (savedState) {
       // Debug Log
       // console.log('📂 Break Manager: Loading Saved State');
-      // console.log('   - Saved State: ', savedState);
-      // console.log('   - Current Raids Since Last Break: ', this.state.raidsSinceLastBreak);
+      // console.log('    - Saved State: ', savedState);
+      // console.log('    - Current Raids Since Last Break: ', this.state.raidsSinceLastBreak);
 
-      this.settings = { ...this.settings, ...savedState.settings };
+      this.state = { ...this.settings, ...savedState.state };
+
+      if (savedState.settings) {
+        this.settings = { ...this.settings, ...savedState.settings, enableBreaks: this.settings.enableBreaks };
+      }
 
       const currentRaids = this.state.raidsSinceLastBreak;
       this.state = {
@@ -91,32 +93,41 @@ class BreakManager {
   onRaidComplete() {
     if (!this.settings.enableBreaks) {
       // Debug Log
-      // console.log('❌ Breaks are Disabled in Settings.');
+      console.log('❌ Breaks are Disabled in Settings.');
       return false;
     }
 
     if (this.state.isOnBreak) {
       // Debug Log
-      // console.log('⏸️ Currently on a Break.');
+      console.log('⏸️ Currently on a Break.');
       return false;
     }
     
     const oldValue = this.state.raidsSinceLastBreak;
     this.state.raidsSinceLastBreak++;
+
+    // Debug Log
     // console.log(`   - Incremented: ${oldValue} → ${this.state.raidsSinceLastBreak}`);
 
     const shouldBreak = this.shouldTakeBreak();
+
+    // Debug Log
     // console.log('   - Should Take Break:', shouldBreak);
     
     // Check if it's time for a break
     if (shouldBreak) {
+      // Debug Log
       // console.log('✅ Starting Break Now.');
+
       const breakInfo = this.startBreak();
+
+      // Debug Log
       // console.log('   - Break Info:', breakInfo);
+
       return true;
     }
     
-    // console.log('❌ Not Taking a Break This Time.');
+    console.log('❌ Not Taking a Break This Time.');
     return false;
   }
   
@@ -135,7 +146,7 @@ class BreakManager {
 
     // Ensure some time has passed since last break
     const timeSinceLastBreak = Date.now() - this.state.lastBreakTime;
-    // console.log('   - Time since Last Break:', timeSinceLastBreak / 1000, 'seconds');
+    console.log('    - Time since Last Break:', timeSinceLastBreak / 1000, 'seconds');
 
     if (timeSinceLastBreak < 60000) { // at least 1 minute
       // console.log('❌ Condition 3 Failed: Less Than 1 Minute Since Last Break.');
@@ -209,7 +220,7 @@ class BreakManager {
       this.breakTimer = null;
     }
     
-    // console.log(`✅ Break Ended. Resuming Raids.`);
+    console.log(`✅ Break Ended. Resuming Raids.`);
     
     // Call callback if set
     if (this.onBreakEndCallback) {
@@ -284,18 +295,32 @@ class BreakManager {
     this.endBreak();
   }
   
-  // Save/Load state for persistence
   saveState() {
     return {
-      state: this.state,
-      settings: this.settings
+      state: {
+        isOnBreak: this.state.isOnBreak,
+        breakStartTime: this.state.breakStartTime,
+        breakEndTime: this.state.breakEndTime,
+        raidsSinceLastBreak: this.state.raidsSinceLastBreak,
+        lastBreakTime: this.state.lastBreakTime,
+        totalBreaks: this.state.totalBreaks
+      }
     };
   }
   
   loadState(savedState) {
     if (savedState) {
-      this.state = { ...this.state, ...savedState.state };
-      this.settings = { ...this.settings, ...savedState.settings };
+      const currentEnableBreaks = this.settings.enableBreaks;
+      
+      if (savedState.state) {
+        this.state = { ...this.state, ...savedState.state };
+      }
+
+      if (savedState.settings) {
+        this.settings = { ...this.settings, ...savedState.settings };
+      }
+
+      this.settings.enableBreaks = currentEnableBreaks;
     }
   }
 }
