@@ -19,6 +19,9 @@ class RaidAutomator {
       totalRaids: 0,
       lastMousePosition: { x: 0, y: 0 },
 
+      // URL Tracking
+      lastUrl: window.location.href,
+
       // Raid Completion Tracking
       lastRaidStartTime: 0,
       raidInProgress: false,
@@ -281,6 +284,7 @@ class RaidAutomator {
       return;
     }
 
+    // Check for URL Change
     const previousScreen = this.state.currentScreen;
     
     // Check if in Raid Start Screen - Use findOkButton() to check both button types
@@ -290,6 +294,10 @@ class RaidAutomator {
     // Check if in Battle Screen
     const autoButton = this.findAutoButton();
     const isBattleScreen = autoButton && this.isVisible(autoButton);
+
+    // Get Current URL
+    const currentUrl = window.location.href;
+    const urlChanged = this.state.lastUrl && this.state.lastUrl !== currentUrl;
     
     // Update Current Screen State
     if (isStartScreen) {
@@ -326,14 +334,22 @@ class RaidAutomator {
       }
       
     } else {
-      this.state.currentScreen = 'other';
-      
-      // Check if Came from Battle Screen
-      if (previousScreen === 'battle' && this.state.raidInProgress) {
-        this.handleRaidCompletion();
-        this.state.raidInProgress = false;
+      if (urlChanged && previousScreen === 'battle' && this.state.raidInProgress) {
+        const wasBattleUrl = this.state.lastUrl.includes('/#raid/') ||
+                          this.state.lastUrl.includes('/#battle/');
+        const isNotBattleUrl = !currentUrl.includes('/#raid/') &&
+                          !currentUrl.includes('/#battle/');
+        
+        if (wasBattleUrl && isNotBattleUrl) {
+          console.log('🎯 URL Change Detected: Raid Completion.');
+          this.handleRaidCompletion();
+          this.state.raidInProgress = false;
+        }
       }
     }
+
+    // Track URL Changes
+    this.state.lastUrl = currentUrl;
   }
 
   handleRaidCompletion() {
