@@ -341,7 +341,8 @@ class RaidAutomator {
                           !currentUrl.includes('/#battle/');
         
         if (wasBattleUrl && isNotBattleUrl) {
-          console.log('🎯 URL Change Detected: Raid Completion.');
+          // Debug Log
+          // console.log('🎯 URL Change Detected: Raid Completion.');
           this.handleRaidCompletion();
           this.state.raidInProgress = false;
         }
