@@ -27,11 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
     redirectFarm: "Redirect to Farm",
     arcaMode: "Arca Mode",
     autoRaid: "Start Raid",
-    autoCombat: "Full Auto"
+    autoCombat: "Full Auto",
+    enableBreaks: "Enable Breaks"
   };
 
   const categories = {
-    "Automation": ["autoRaid", "autoCombat"],
+    "Automation": ["autoRaid", "autoCombat", "enableBreaks"],
     "Navigation": ["arcaMode", "redirectFarm"],
     "Attack Settings": ["goBackOnAttack", "reloadAttack"],
     "Skill Settings": ["reloadSkill"],
@@ -105,6 +106,21 @@ document.addEventListener('DOMContentLoaded', () => {
         let features = [];
         if (autoRaidEnabled) features.push('Start Raid');
         if (autoCombatEnabled) features.push('Full Auto');
+
+        // Break Status
+        let breakStatus = '';
+        if (message.isOnBreak) {
+          const timeLeft = message.timeLeft || 0;
+          const minutes = Math.floor(timeLeft / 60000);
+          const seconds = Math.floor((timeLeft % 60000) / 1000);
+          breakStatus = `<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ffc107;">
+            ⏸️ <strong>On Break</strong> - ${minutes > 0 ? minutes + 'm ' : ''}${seconds}s remaining
+          </div>`;
+        } else if (enableBreaks && message.raidsSinceLastBreak !== undefined) {
+          breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
+            ✅ Breaks Enabled - ${message.raidsSinceLastBreak} Raids since Last Break
+          </div>`;
+        }
         
         statusDiv.innerHTML = `
           <div style="display: flex; align-items: center; margin-bottom: 8px;">
@@ -133,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <strong style="color: #666;">INACTIVE</strong>
           </div>
           <div style="margin-left: 18px; font-size: 11px; color: #777;">
-            Enable automation features above
+            Enable Automation Features to Start
           </div>
         `;
         statusDiv.style.backgroundColor = "#f5f5f5";
@@ -147,6 +163,23 @@ document.addEventListener('DOMContentLoaded', () => {
       let features = [];
       if (autoRaidEnabled) features.push('Start Raid');
       if (autoCombatEnabled) features.push('Full Auto');
+
+      // Break Status
+      let breakStatus = '';
+      if (enableBreaks) {
+        breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
+          ✅ Breaks Enabled
+        </div>`;
+      }
+
+      let statusMessage = 'Monitoring for buttons...'; // Default Message
+      if (autoRaidEnabled && !autoCombatEnabled) {
+        statusMessage = 'Waiting to Start Raid.';
+      } else if (!autoRaidEnabled && autoCombatEnabled) {
+        statusMessage = 'Waiting for Battle Screen.';
+      } else if (autoRaidEnabled && autoCombatEnabled) {
+        statusMessage = 'Waiting to Start Raid and Full Auto.';
+      }
       
       statusDiv.innerHTML = `
         <div style="display: flex; align-items: center; margin-bottom: 8px;">
@@ -154,12 +187,20 @@ document.addEventListener('DOMContentLoaded', () => {
           <strong style="color: #2e7d32;">ACTIVE: ${features.join(' + ')}</strong>
         </div>
         <div style="margin-left: 18px; font-size: 11px; color: #666;">
-          Monitoring for buttons...
+          ${statusMessage}
         </div>
       `;
       statusDiv.style.backgroundColor = "#e8f5e8";
       statusDiv.style.borderLeftColor = "#4CAF50";
     } else {
+      // Inactive with break status
+      let breakStatus = '';
+      if (enableBreaks) {
+        breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
+          ✅ Breaks Enabled - Will Activate with Automation
+        </div>`;
+      }
+
       statusDiv.innerHTML = `
         <div style="color: #666; font-style: italic;">
           Enable "Start Raid" or "Full Auto" to begin automation
@@ -255,7 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.tabs.sendMessage(tabs[0].id, {
               type: 'updateSettings',
               autoRaid: elements.autoRaid?.checked || false,
-              autoCombat: elements.autoCombat?.checked || false
+              autoCombat: elements.autoCombat?.checked || false,
+              enableBreaks: elements.enableBreaks?.checked || false
             }).catch(err => {
               console.log('Content script not ready yet:', err);
             });
@@ -344,6 +386,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Popup Detected
     else if (msg.type === "popupDetected") {
       handlePopupDetected(msg);
+    }
+    else if (msg.type === "breakStatusUpdate") {
+      updateRaidStatusDisplay(msg);
     }
   });
 

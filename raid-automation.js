@@ -26,13 +26,6 @@ class RaidAutomator {
       lastRaidStartTime: 0,
       raidInProgress: false,
       lastRaidCompletionLog: 0,
-
-      // Break Tracking
-      isOnBreak: false,
-      breakStartTime: 0,
-      breakEndTime: 0,
-      raidsSinceLastBreak: 0,
-      lastBreakTime: 0,
       
       // Auto Combat Click Tracking
       autoClickAttempted: false,
@@ -61,25 +54,20 @@ class RaidAutomator {
       HUMAN_DELAY_CHANCE: 0.3, // 30% chance of extra delay
       HUMAN_DELAY_MIN: 500,    // 0.5 second minimum extra delay
       HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
-
-      // Break Probability Settings
-      BREAK_CHANCE_PER_RAID: 0.18, // 18% chance to take a break after any raid
-      MIN_RAIDS_BETWEEN_BREAKS: 3,  // At least 3 raids between breaks
-      MAX_RAIDS_BETWEEN_BREAKS: 12,  // At most 12 raids between breaks
-      
-      // Break Duration Settings
-      SHORT_BREAK_MIN: 30000,     // 30 seconds
-      SHORT_BREAK_MAX: 120000,    // 2 minutes
-      MEDIUM_BREAK_MIN: 120000,    // 2 minutes
-      MEDIUM_BREAK_MAX: 300000,    // 5 minutes
-      LONG_BREAK_MIN: 600000,     // 10 minutes
-      LONG_BREAK_MAX: 1200000,     // 20 minutes
-      
-      // Break Type Probabilities
-      SHORT_BREAK_CHANCE: 0.7,    // 70% short breaks (most common)
-      MEDIUM_BREAK_CHANCE: 0.25,   // 25% medium breaks
-      LONG_BREAK_CHANCE: 0.05      // 5% long breaks (rare)
     };
+
+    // Initialize Break Manager
+    this.breakManager = new BreakManager({
+      enableBreaks: false
+    });
+
+    // Setup Break End Callback
+    this.breakManager.setOnBreakEndCallback(() => {
+      this.updateStatus('Break Ended. Resuming Automation...');
+      if (this.settings.autoRaid || this.settings.autoCombat) {
+        this.start();
+      }
+    });
     
     this.observer = null;
     this.interval = null;
@@ -88,79 +76,22 @@ class RaidAutomator {
   
   async init() {
     await this.loadSettings();
-    await this.loadPersistentState(); // Load Saved Raid Count
-
-    // Check for Ongoing Break
-    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
-      const timeLife = Math.ceil((this.state.breakEndTime - Date.now()) / 1000);
-      this.updateStatus(`⏸️ On Break for ${timeLife} More Seconds...`);
-
-      // Resume Break Monitoring
-      this.monitorBreak();
-      return;
-    } else if (this.state.isOnBreak) {
-      // Break has Ended
-      this.state.isOnBreak = false;
-      this.savePersistentState();
-    }
+    await this.loadPersistentState();
+    await this.loadBreakManagerState();
     
     this.setupListeners();
     this.setupObserver();
+
+    // Auto Start if Either Feature is Enabled and Not on Break
+    const breakStatus = this.breakManager.getStatus();
+    if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
+      this.start();
+    }
     
     // Start if Either Feature is Enabled
     if (this.settings.autoRaid || this.settings.autoCombat) {
       this.start();
     }
-  }
-
-  monitorBreak() {
-    const breakMessages = [
-      "Taking a quick break...",
-      "Stretching...",
-      "Checking notifications...",
-      "Getting some water...",
-      "Looking away from screen...",
-      "Quick rest..."
-    ];
-    
-    const checkBreak = () => {
-      if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
-        const timeLeft = Math.ceil((this.state.breakEndTime - Date.now()) / 1000);
-        
-        // Update Status Every 15 Seconds with Random Message
-        if (timeLeft % 15 === 0) {
-          const randomMessage = breakMessages[Math.floor(Math.random() * breakMessages.length)];
-          this.updateStatus(`${randomMessage} (${timeLeft}s left)`);
-        } else {
-          this.updateStatus(`⏸️ Break: ${timeLeft}s remaining`);
-        }
-        
-        setTimeout(checkBreak, 1000);
-      } else if (this.state.isOnBreak) {
-        // Break has Ended
-        this.state.isOnBreak = false;
-        this.savePersistentState();
-        
-        const resumeMessages = [
-          "Back to it!",
-          "Break over, resuming...",
-          "Ready to go again!",
-          "Let's continue!"
-        ];
-        const randomResume = resumeMessages[Math.floor(Math.random() * resumeMessages.length)];
-        this.updateStatus(randomResume);
-
-        // Resume Automation if Enabled
-        this.setupListeners();
-        this.setupObserver();
-
-        if (this.settings.autoRaid || this.settings.autoCombat) {
-          this.start();
-        }
-      }
-    };
-
-    checkBreak();
   }
   
   // Load Settings from Storage
@@ -174,6 +105,26 @@ class RaidAutomator {
     });
   }
 
+  // Load Break Manager State
+  async loadBreakManagerState() {
+    return new Promise(resolve => {
+      chrome.storage.local.get(['breakManagerState'], data => {
+        if (data.breakManagerState && this.breakManager) {
+          this.breakManager.loadState(data.breakManagerState);
+        }
+        resolve();
+      });
+    });
+  }
+
+  // Save Break Manager State
+  async saveBreakManagerState() {
+    if (this.breakManager) {
+      const stateToSave = this.breakManager.saveState();
+      chrome.storage.local.set({ breakManagerState: stateToSave });
+    }
+  }
+
   // Load Persistent State
   async loadPersistentState() {
     return new Promise(resolve => {
@@ -182,11 +133,6 @@ class RaidAutomator {
           const saved = data.raidAutomatorState;
           this.state.totalRaids = saved.totalRaids || 0;
           this.state.sessionStart = saved.sessionStart || Date.now();
-          this.state.raidsSinceLastBreak = saved.raidsSinceLastBreak || 0;
-          this.state.lastBreakTime = saved.lastBreakTime || 0;
-          this.state.isOnBreak = saved.isOnBreak || false;
-          this.state.breakStartTime = saved.breakStartTime || 0;
-          this.state.breakEndTime = saved.breakEndTime || 0;
           
           // Debug Log
           // console.log(`📊 Loaded: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
@@ -201,11 +147,6 @@ class RaidAutomator {
     const stateToSave = {
       totalRaids: this.state.totalRaids,
       sessionStart: this.state.sessionStart,
-      raidsSinceLastBreak: this.state.raidsSinceLastBreak,
-      lastBreakTime: this.state.lastBreakTime,
-      isOnBreak: this.state.isOnBreak,
-      breakStartTime: this.state.breakStartTime,
-      breakEndTime: this.state.breakEndTime
     };
 
     chrome.storage.local.set({ raidAutomatorState: stateToSave }, () => {
@@ -280,9 +221,8 @@ class RaidAutomator {
   
   detectCurrentScreen() {
     // Skip if on Break
-    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
-      return;
-    }
+    const breakStatus = this.breakManager.getStatus();
+    if (breakStatus.isOnBreak) { return; }
 
     // Check for URL Change
     const previousScreen = this.state.currentScreen;
@@ -354,31 +294,22 @@ class RaidAutomator {
   }
 
   handleRaidCompletion() {
-    // Skip if on Break
-    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
-      return;
-    }
-
     // Prevent Duplicate Logs
     if (Date.now() - this.state.lastRaidCompletionLog < 1000) return;
     
     this.state.totalRaids++;
-    this.state.raidsSinceLastBreak++;
     this.state.lastRaidCompletionLog = Date.now();
     
     const raidDuration = Date.now() - this.state.lastRaidStartTime;
     const durationSeconds = Math.round(raidDuration / 1000);
-
-    this.savePersistentState();
     
-    this.updateStatus(`Raid ${this.state.totalRaids} complete! (${durationSeconds}s)`);
-
-    // Debug Log
+    this.updateStatus(`Raid ${this.state.totalRaids} Complete! (${durationSeconds}s)`);
     console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSeconds} Seconds.`);
-    
-    // Check if it's time for a break
-    if (this.shouldTakeBreak()) {
-      this.takeHumanBreak();
+
+    // Check for Break
+    if (this.breakManager.onRaidComplete()) {
+      this.stop();
+      this.updateStatus('⏸️ Taking a Break. Automation Paused.');
     }
 
     // Track Raid Durations for Averages
@@ -529,76 +460,14 @@ class RaidAutomator {
     });
   }
 
-  shouldTakeBreak() {
-    // Ensure Some Time has Passed Since Last Break
-    if (Date.now() - this.state.lastBreakTime < 60000) return false;
-    
-    // Minimum raids between breaks
-    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) return false;
-    
-    // Maximum raids between breaks
-    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) return true;
-    
-    // Random chance based on raids completed
-    const breakChance = this.timing.BREAK_CHANCE_PER_RAID * 
-                      (this.state.raidsSinceLastBreak / this.timing.MIN_RAIDS_BETWEEN_BREAKS);
-    
-    return Math.random() < breakChance;
-  }
-  
-  async takeHumanBreak() {
-    if (!this.state.active) return;
-
-    // Determine Break Type
-    const breakType = this.determineBreakType();
-    const breakTime = this.getBreakDuration(breakType);
-    
-    // Set Break State
-    this.state.isOnBreak = true;
-    this.state.breakStartTime = Date.now();
-    this.state.breakEndTime = Date.now() + breakTime;
-    this.state.raidsSinceLastBreak = 0;
-    this.state.lastBreakTime = Date.now();
-
-    const breakMinutes = Math.round(breakTime / 60000);
-    const breakSeconds = Math.round((breakTime % 60000) / 1000);
-      
-    this.updateStatus(`${breakType} break: ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
-    console.log(`⏸️ Taking ${breakType.charAt(0).toUpperCase() + breakType.slice(1)} Break after ${this.state.totalRaids} Raids for ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
-
-    // Save State
-    await this.savePersistentState();
-    
-    // Stop Automation
-    this.stop();
-    
-    // Start Monitoring Break
-    this.monitorBreak();
-  }
-
-  determineBreakType() {
-    const rand = Math.random();
-    if (rand < this.timing.SHORT_BREAK_CHANCE) return 'short';
-    if (rand < this.timing.SHORT_BREAK_CHANCE + this.timing.MEDIUM_BREAK_CHANCE) return 'medium';
-    return 'long';
-  }
-
-  getBreakDuration(breakType) {
-    switch (breakType) {
-      case 'short':
-        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
-      case 'medium':
-        return this.getRandomDelay(this.timing.MEDIUM_BREAK_MIN, this.timing.MEDIUM_BREAK_MAX);
-      case 'long':
-        return this.getRandomDelay(this.timing.LONG_BREAK_MIN, this.timing.LONG_BREAK_MAX);
-      default:
-        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
-    }
-  }
-  
   updateSettings(msg) {
     this.settings.autoRaid = msg.autoRaid ?? this.settings.autoRaid;
     this.settings.autoCombat = msg.autoCombat ?? this.settings.autoCombat;
+
+    // Update Break Manager Settings
+    if (this.breakManager && msg.enableBreaks !== undefined) {
+      this.breakManager.updateSettings({ enableBreaks: msg.enableBreaks });
+    }
     
     if ((this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
       this.start();
@@ -617,7 +486,7 @@ class RaidAutomator {
       this.checkButtons();
     }, this.timing.CHECK_INTERVAL);
     
-    let statusMessage = 'Automation active: ';
+    let statusMessage = 'Automation Active: ';
     const features = [];
     if (this.settings.autoRaid) features.push('Start Raid');
     if (this.settings.autoCombat) features.push('Full Auto');
@@ -643,9 +512,8 @@ class RaidAutomator {
   
   checkButtons() {
     // Skip if on Break
-    if (this.state.isOnBreak && this.state.breakEndTime > Date.now()) {
-      return;
-    }
+    const breakStatus = this.breakManager.getStatus();
+    if (breakStatus.isOnBreak) { return; }
 
     if (!this.state.active) return;
     
@@ -1201,6 +1069,12 @@ class RaidAutomator {
       totalRaids: this.state.totalRaids,
       timestamp: new Date().toLocaleTimeString()
     };
+
+    // Include Break Status if Applicable
+    if (this.breakManager) {
+      const breakStatus = this.breakManager.getStatus();
+      Object.assign(status, breakStatus);
+    }      
     
     this.safeSendMessage(status);
     chrome.storage.local.set({ raidStatus: status });
