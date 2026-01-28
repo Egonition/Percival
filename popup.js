@@ -252,6 +252,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load Settings from Storage
   chrome.storage.sync.get(storageDefaults, (data) => {
+    
+    // Debug Log
+    console.log('🔄 Loaded Settings from Storage:', data);
+
     for (let key of allKeys) {
       if (elements[key]) {
         elements[key].checked = !!data[key];
@@ -281,6 +285,9 @@ document.addEventListener('DOMContentLoaded', () => {
   for (let key in elements) {
     elements[key].onchange = e => {
       const isChecked = e.target.checked;
+
+      // Debug Log
+      console.log(`🔄 Saving Setting: ${key}=${isChecked}`);
       
       // Save to Storage
       chrome.storage.sync.set({ [key]: isChecked }, () => {

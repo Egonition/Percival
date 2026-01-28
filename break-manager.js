@@ -51,33 +51,108 @@ class BreakManager {
       this.endBreak();
     }
   }
+
+  saveState() {
+    return {
+      settings: this.settings,
+      state: {
+        isOnBreak: this.state.isOnBreak,
+        breakStartTime: this.state.breakStartTime,
+        breakEndTime: this.state.breakEndTime,
+        raidsSinceLastBreak: this.state.raidsSinceLastBreak, // THIS IS CRITICAL!
+        lastBreakTime: this.state.lastBreakTime,
+        totalBreaks: this.state.totalBreaks
+      }
+    };
+  }
+
+  loadState(savedState) {
+    if (savedState) {
+      // Debug Log
+      // console.log('📂 Break Manager: Loading Saved State');
+      // console.log('   - Saved State: ', savedState);
+      // console.log('   - Current Raids Since Last Break: ', this.state.raidsSinceLastBreak);
+
+      this.settings = { ...this.settings, ...savedState.settings };
+
+      const currentRaids = this.state.raidsSinceLastBreak;
+      this.state = {
+        ...this.state,
+        ...savedState.state,
+        raidsSinceLastBreak: currentRaids > 0 ? currentRaids : (savedState.state.raidsSinceLastBreak || 0)
+      };
+
+      // Debug Log
+      // console.log('   - Loaded Raids Since Last Break: ', this.state.raidsSinceLastBreak);
+    }
+  }
   
   // Called after each raid completes
   onRaidComplete() {
-    if (!this.settings.enableBreaks) return false;
+    if (!this.settings.enableBreaks) {
+      // Debug Log
+      // console.log('❌ Breaks are Disabled in Settings.');
+      return false;
+    }
+
+    if (this.state.isOnBreak) {
+      // Debug Log
+      // console.log('⏸️ Currently on a Break.');
+      return false;
+    }
     
+    const oldValue = this.state.raidsSinceLastBreak;
     this.state.raidsSinceLastBreak++;
+    // console.log(`   - Incremented: ${oldValue} → ${this.state.raidsSinceLastBreak}`);
+
+    const shouldBreak = this.shouldTakeBreak();
+    // console.log('   - Should Take Break:', shouldBreak);
     
     // Check if it's time for a break
-    if (this.shouldTakeBreak()) {
-      this.startBreak();
+    if (shouldBreak) {
+      // console.log('✅ Starting Break Now.');
+      const breakInfo = this.startBreak();
+      // console.log('   - Break Info:', breakInfo);
       return true;
     }
     
+    // console.log('❌ Not Taking a Break This Time.');
     return false;
   }
   
   shouldTakeBreak() {
-    if (!this.settings.enableBreaks) return false;
-    
+    if (!this.settings.enableBreaks) {
+      // Debug Log
+      // console.log('❌ Condition 1 Failed: Breaks are Disabled in Settings.');
+      return false;
+    }
+
+    if (this.state.isOnBreak) {
+      // Debug Log
+      // console.log('❌ Condition 2 Failed: Currently on a Break.');
+      return false;
+    }
+
     // Ensure some time has passed since last break
-    if (Date.now() - this.state.lastBreakTime < 60000) return false;
+    const timeSinceLastBreak = Date.now() - this.state.lastBreakTime;
+    // console.log('   - Time since Last Break:', timeSinceLastBreak / 1000, 'seconds');
+
+    if (timeSinceLastBreak < 60000) { // at least 1 minute
+      // console.log('❌ Condition 3 Failed: Less Than 1 Minute Since Last Break.');
+      return false;
+    }
     
     // Minimum raids between breaks
-    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) return false;
+    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) {
+      // console.log('❌ Condition 4 Failed: Minimum Raids Between Breaks Not Met.');
+      return false;
+    }
     
     // Maximum raids between breaks
-    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) return true;
+    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) {
+      // console.log('✅ Condition 5 Met: Maximum Raids Between Breaks Reached.');
+      return true;
+    }
     
     // Random chance based on raids completed
     const breakChance = this.timing.BREAK_CHANCE_PER_RAID * 
@@ -134,7 +209,7 @@ class BreakManager {
       this.breakTimer = null;
     }
     
-    console.log(`✅ Break ended, resuming automation`);
+    // console.log(`✅ Break Ended. Resuming Raids.`);
     
     // Call callback if set
     if (this.onBreakEndCallback) {

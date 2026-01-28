@@ -64,6 +64,7 @@ class RaidAutomator {
     // Setup Break End Callback
     this.breakManager.setOnBreakEndCallback(() => {
       this.updateStatus('Break Ended. Resuming Automation...');
+      this.saveBreakManagerState();
       if (this.settings.autoRaid || this.settings.autoCombat) {
         this.start();
       }
@@ -75,10 +76,24 @@ class RaidAutomator {
   }
   
   async init() {
+    // Load Settings from Storage
     await this.loadSettings();
-    await this.loadPersistentState();
+
+    // Update Break Manager Settings
+    if (this.breakManager) {
+      this.breakManager.updateSettings({ enableBreaks: this.settings.enableBreaks });
+    }
+
+    // Load Break Manager State
     await this.loadBreakManagerState();
+
+    // Setup Break Manager State Saving
+    this.setupBreakManagerState();
+
+    // Load Persistent State
+    await this.loadPersistentState();
     
+    // Setup Listeners and Observer
     this.setupListeners();
     this.setupObserver();
 
@@ -97,32 +112,13 @@ class RaidAutomator {
   // Load Settings from Storage
   async loadSettings() {
     return new Promise(resolve => {
-      chrome.storage.sync.get(['autoRaid', 'autoCombat'], data => {
+      chrome.storage.sync.get(['autoRaid', 'autoCombat', 'enableBreaks'], data => {
         this.settings.autoRaid = data.autoRaid || false;
         this.settings.autoCombat = data.autoCombat || false;
+        this.settings.enableBreaks = data.enableBreaks || false;
         resolve();
       });
     });
-  }
-
-  // Load Break Manager State
-  async loadBreakManagerState() {
-    return new Promise(resolve => {
-      chrome.storage.local.get(['breakManagerState'], data => {
-        if (data.breakManagerState && this.breakManager) {
-          this.breakManager.loadState(data.breakManagerState);
-        }
-        resolve();
-      });
-    });
-  }
-
-  // Save Break Manager State
-  async saveBreakManagerState() {
-    if (this.breakManager) {
-      const stateToSave = this.breakManager.saveState();
-      chrome.storage.local.set({ breakManagerState: stateToSave });
-    }
   }
 
   // Load Persistent State
@@ -153,6 +149,58 @@ class RaidAutomator {
       // Debug Log
       // console.log(`💾 Saved: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
     });
+  }
+
+  // Load Break Manager State
+  async loadBreakManagerState() {
+    return new Promise(resolve => {
+      chrome.storage.local.get(['breakManagerState'], data => {
+        if (data.breakManagerState && this.breakManager) {
+          // console.log('🔄 Loading Break Manager State:', data.breakManagerState);
+          this.breakManager.loadState(data.breakManagerState);
+          
+          const status = this.breakManager.getStatus();
+          // Debug Log
+          // console.log(`   - Raids Since Last Break After Load: ${status.raidsSinceLastBreak}`);
+        } else {
+          // Debug Log
+          // console.log('ℹ️ No Break Manager State Found to Load.');
+        }
+        resolve();
+      });
+    });
+  }
+
+  // Save Break Manager State
+  setupBreakManagerState() {
+    const originalOnRaidComplete = this.breakManager.onRaidComplete.bind(this.breakManager);
+    this.breakManager.onRaidComplete = () => {
+      const result = originalOnRaidComplete();
+      if (result) {
+        this.saveBreakManagerState();
+      }
+      return result;
+    };
+
+    this.breakManager.setOnBreakEndCallback(() => {
+      this.saveBreakManagerState();
+      this.updateStatus('Break Ended. Resuming Automation...');
+      if (this.settings.autoRaid || this.settings.autoCombat) {
+        this.start();
+      }
+    });
+  }
+
+  async saveBreakManagerState() {
+    if (this.breakManager) {
+      const state = this.breakManager.saveState();
+      // Debug Log
+      // console.log('🔄 Saving Break Manager State:', state);
+      chrome.storage.local.set({ breakManagerState: state }, () => {
+        // Debug Log
+        // console.log('✅ Break Manager State Saved.');
+      });
+    }
   }
 
   setupListeners() {
@@ -306,11 +354,22 @@ class RaidAutomator {
     this.updateStatus(`Raid ${this.state.totalRaids} Complete! (${durationSeconds}s)`);
     console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSeconds} Seconds.`);
 
+    if (this.breakManager) {
+      const beforeStatus = this.breakManager.getStatus();
+      // Debug Log
+      // console.log(`  - Raids Since Last Break Before:', ${beforeStatus.raidsSinceLastBreak}`);
+      // console.log(`  - Total Raids:', ${this.state.totalRaids}`);
+    }
+
     // Check for Break
     if (this.breakManager.onRaidComplete()) {
       this.stop();
       this.updateStatus('⏸️ Taking a Break. Automation Paused.');
     }
+
+    // Save State
+    this.savePersistentState();
+    this.saveBreakManagerState();
 
     // Track Raid Durations for Averages
     this.state.raidDurations = this.state.raidDurations || [];
@@ -575,7 +634,9 @@ class RaidAutomator {
     const nextRaidNumber = this.state.totalRaids + 1;
     this.updateStatus(`Starting Raid ${nextRaidNumber}...`);
 
-    await this.savePersistentState(); // Save Updated Raid Count
+    // Save State Before Starting Raid
+    await this.savePersistentState();
+    await this.saveBreakManagerState();
     
     // Add Human-Like Delay before Action
     if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
