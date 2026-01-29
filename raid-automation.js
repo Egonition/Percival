@@ -60,15 +60,6 @@ class RaidAutomator {
     this.breakManager = new BreakManager({
       enableBreaks: false
     });
-
-    // Setup Break End Callback
-    this.breakManager.setOnBreakEndCallback(() => {
-      this.updateStatus('Break Ended. Resuming Automation...');
-      this.saveBreakManagerState();
-      if (this.settings.autoRaid || this.settings.autoCombat) {
-        this.start();
-      }
-    });
     
     this.observer = null;
     this.interval = null;
@@ -100,11 +91,6 @@ class RaidAutomator {
     // Auto Start if Either Feature is Enabled and Not on Break
     const breakStatus = this.breakManager.getStatus();
     if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
-      this.start();
-    }
-    
-    // Start if Either Feature is Enabled
-    if (this.settings.autoRaid || this.settings.autoCombat) {
       this.start();
     }
   }
@@ -156,14 +142,18 @@ class RaidAutomator {
     return new Promise(resolve => {
       chrome.storage.local.get(['breakManagerState'], data => {
         if (data.breakManagerState && this.breakManager) {
-          console.log('🔄 Loading Break Manager State:', data.breakManagerState);
+          // Debug Log
+          // console.log('🔄 Loading Break Manager State:', data.breakManagerState);
+          
+          // Load State into Break Manager
+          this.breakManager.loadState(data.breakManagerState);
 
           if (this.breakManager.settings.enableBreaks) {
             const status = this.breakManager.getStatus();
-            console.log(`    - Raids Since Last Break: ${status.raidsSinceLastBreak}`);
+            console.log(`Raids Since Last Break: ${status.raidsSinceLastBreak}`);
           }
 
-          this.breakManager.loadState(data.breakManagerState);
+          
         } else {
           // Debug Log
           // console.log('ℹ️ No Break Manager State Found to Load.');
@@ -220,7 +210,57 @@ class RaidAutomator {
           autoCombatActive: this.state.autoCombatActive,
           currentScreen: this.state.currentScreen,
           timestamp: new Date().toLocaleTimeString(),
-          totalRaids: this.state.totalRaids
+          totalRaids: this.state.totalRaids,
+
+          // Break Status
+          isOnBreak: this.breakManager?.state?.isOnBreak || false,
+          timeLeft: this.breakManager?.state?.isOnBreak && this.breakManager.state.breakEndTime 
+            ? Math.max(0, this.breakManager.state.breakEndTime - Date.now())
+            : 0,
+          raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0
+        });
+      }
+      else if (msg.type === 'forceEndBreak') {
+        console.log('🚀 Received Force End Break Command');
+        
+        if (this.breakManager) {
+          const success = this.breakManager.forceEndBreak();
+          
+          // Prepare Status Update
+          const statusUpdate = {
+            type: 'breakStatusUpdate',
+            isOnBreak: false,
+            raidsSinceLastBreak: 0
+          };
+          
+          // Respond to Sender
+          respond({ 
+            success: success,
+            message: success ? 'Break Force Ended' : 'No Active Break to End'
+          });
+          
+          // Send Update to Popup
+          this.safeSendMessage(statusUpdate);
+
+          // Resume Automation if Enabled
+          if (success && (this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
+            this.start();
+          }
+        } else {
+          respond({ 
+            success: false,
+            message: 'Break Manager Not Available'
+          });
+        }
+      }
+      else if (msg.type === 'getBreakStatus') {
+        respond({
+          isOnBreak: this.breakManager?.state?.isOnBreak || false,
+          timeLeft: this.breakManager?.state?.isOnBreak && this.breakManager.state.breakEndTime 
+            ? Math.max(0, this.breakManager.state.breakEndTime - Date.now())
+            : 0,
+          raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0,
+          totalBreaks: this.breakManager?.state?.totalBreaks || 0
         });
       }
       return true;
@@ -235,6 +275,13 @@ class RaidAutomator {
           else if (!this.settings.autoRaid && !this.settings.autoCombat && this.state.active) {
             this.stop();
           }
+        });
+      }
+
+      // Update Break Manager Settings if Changed
+      if (changes.enableBreaks && this.breakManager) {
+        this.breakManager.updateSettings({
+          enableBreaks: changes.enableBreaks.newValue
         });
       }
     });
@@ -272,7 +319,10 @@ class RaidAutomator {
   detectCurrentScreen() {
     // Skip if on Break
     const breakStatus = this.breakManager.getStatus();
-    if (breakStatus.isOnBreak) { return; }
+    if (breakStatus.isOnBreak) {
+      this.state.currentScreen = 'break';
+      return; 
+    }
 
     // Check for URL Change
     const previousScreen = this.state.currentScreen;
@@ -360,6 +410,15 @@ class RaidAutomator {
     if (this.breakManager.onRaidComplete()) {
       this.stop();
       this.updateStatus('⏸️ Taking a Break. Automation Paused.');
+
+      // Send Break Status Update
+      const breakStatus = this.breakManager.getStatus();
+      this.safeSendMessage({
+        type: 'breakStatusUpdate',
+        isOnBreak: true,
+        timeLeft: breakStatus.timeLeft || 0,
+        raidsSinceLastBreak: breakStatus.raidsSinceLastBreak || 0
+      });
     }
 
     // Save State

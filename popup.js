@@ -92,6 +92,160 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   container.appendChild(statusDiv);
 
+  let breakControls = document.getElementById('breakControls');
+  let forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
+  let breakStatus = document.getElementById('breakStatus');
+  
+  // If break controls don't exist in HTML, create them
+  if (!breakControls) {
+    const breakControlsHTML = `
+      <div id="breakControls" style="
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #ccc;
+        display: none;
+      ">
+        <h4 style="margin: 0 0 10px 0; color: #2e7d32;">Break Controls</h4>
+        
+        <button id="forceEndBreakBtn" style="
+          width: 100%;
+          padding: 10px;
+          background: #ff9800;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: bold;
+          margin-bottom: 10px;
+        ">
+          ▶️ Force End Break
+        </button>
+        
+        <div id="breakStatus" style="
+          padding: 8px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          font-size: 11px;
+          text-align: center;
+          border-left: 4px solid #4CAF50;
+          min-height: 20px;
+        ">
+          Break controls ready
+        </div>
+      </div>
+    `;
+    
+    // Insert break controls after settings container
+    container.insertAdjacentHTML('beforeend', breakControlsHTML);
+    
+    // Get the newly created elements
+    breakControls = document.getElementById('breakControls');
+    forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
+    breakStatus = document.getElementById('breakStatus');
+  }
+
+  // Update Break Controls Visibility and State
+  function updateBreakControls(breakData) {
+    if (!breakData) return;
+    
+    // Debug Log
+    console.log('🔧 Updating Break Controls With:', breakData);
+    
+    // Always show break controls
+    breakControls.style.display = 'block';
+    
+    if (breakData.isOnBreak) {
+      // Currently on Break - show End button
+      forceEndBreakBtn.style.display = 'block';
+      
+      // Update button text with time remaining
+      if (breakData.timeLeft && breakData.timeLeft > 0) {
+        const minutes = Math.floor(breakData.timeLeft / 60000);
+        const seconds = Math.floor((breakData.timeLeft % 60000) / 1000);
+        forceEndBreakBtn.innerHTML = `▶️ Force End Break (${minutes}m ${seconds}s left)`;
+        
+        // Update status display
+        breakStatus.innerHTML = `⏸️ On Break - ${minutes}m ${seconds}s remaining`;
+        breakStatus.style.color = '#ff9800';
+        breakStatus.style.borderLeftColor = '#ff9800';
+      } else {
+        forceEndBreakBtn.innerHTML = '▶️ Force End Break';
+        breakStatus.innerHTML = '⏸️ On break (time unknown)';
+        breakStatus.style.color = '#ff9800';
+        breakStatus.style.borderLeftColor = '#ff9800';
+      }
+    } else {
+      // Not on break - hide End button
+      forceEndBreakBtn.style.display = 'none';
+      
+      // Update status display
+      if (breakData.raidsSinceLastBreak !== undefined) {
+        breakStatus.innerHTML = `✅ Ready - ${breakData.raidsSinceLastBreak} Raids Since Last Break`;
+        breakStatus.style.color = '#4CAF50';
+        breakStatus.style.borderLeftColor = '#4CAF50';
+      } else {
+        breakStatus.innerHTML = '✅ No Active Break';
+        breakStatus.style.color = '#4CAF50';
+        breakStatus.style.borderLeftColor = '#4CAF50';
+      }
+    }
+  }
+
+  // Force End Break Button Handler
+  forceEndBreakBtn.addEventListener('click', () => {
+    console.log('🚀 Force End Break...');
+    
+    // Update UI immediately
+    breakStatus.innerHTML = '🔄 Ending Break...';
+    breakStatus.style.color = '#ff9800';
+    
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'forceEndBreak'
+        }).then(response => {
+          console.log('✅ Force End Break Response:', response);
+          
+          if (response?.success) {
+            // Update UI
+            breakStatus.innerHTML = '✅ Break Ended Successfully';
+            breakStatus.style.color = '#4CAF50';
+            forceEndBreakBtn.style.display = 'none';
+            
+            setTimeout(() => {
+              breakStatus.innerHTML = '✅ Ready';
+              breakStatus.style.color = '#4CAF50';
+            }, 2000);
+            
+            // Update raid status display
+            updateRaidStatusDisplay({
+              type: 'breakStatusUpdate',
+              isOnBreak: false,
+              raidsSinceLastBreak: 0
+            });
+          } else {
+            breakStatus.innerHTML = '❌ Failed to End Break';
+            breakStatus.style.color = '#f44336';
+          }
+        }).catch(err => {
+          console.log('❌ Force End Break Error:', err);
+          breakStatus.innerHTML = '❌ Error: Content Script Not Ready';
+          breakStatus.style.color = '#f44336';
+          
+          // Reset after 2 seconds
+          setTimeout(() => {
+            breakStatus.innerHTML = '✅ Ready';
+            breakStatus.style.color = '#4CAF50';
+          }, 2000);
+        });
+      } else {
+        breakStatus.innerHTML = '❌ No Active Tab Found';
+        breakStatus.style.color = '#f44336';
+      }
+    });
+  });
+
   // Function to Update Raid Status Display
   function updateRaidStatusDisplay(message = null) {
     const statusDiv = document.getElementById("raidStatus");
@@ -275,6 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Content script not available:', chrome.runtime.lastError.message);
           } else if (response) {
             updateRaidStatusDisplay(response);
+            updateBreakControls(response);
           }
         });
       }
@@ -396,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     else if (msg.type === "breakStatusUpdate") {
       updateRaidStatusDisplay(msg);
+      updateBreakControls(msg);
     }
   });
 
