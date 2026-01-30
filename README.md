@@ -27,5 +27,7 @@ For additional performance improvements, you can add these filters to uBlock Ori
 **What These Do:**
 - Block UI Sidebar Elements
 - Block Raid Entry Portrait
+- Block Character and Summon Models
+- Block Character Skill Animations
 
 **Note:** These filters work alongside the extension's built-in animation blocking for maximum performance.
