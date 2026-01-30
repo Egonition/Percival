@@ -38,6 +38,9 @@ class RaidAutomator {
       ok: 0,
       auto: 0
     };
+
+    // Interval Reference
+    this.fullAutoCheckInterval = null;
     
     // Timing Settings
     this.timing = {
@@ -320,14 +323,14 @@ class RaidAutomator {
     // Skip if on Break
     const breakStatus = this.breakManager.getStatus();
     if (breakStatus.isOnBreak) {
-      this.state.currentScreen = 'break';
-      return; 
+        this.state.currentScreen = 'break';
+        return; 
     }
 
     // Check for URL Change
     const previousScreen = this.state.currentScreen;
     
-    // Check if in Raid Start Screen - Use findOkButton() to check both button types
+    // Check if in Raid Start Screen
     const okButton = this.findOkButton();
     const isStartScreen = okButton && this.isVisible(okButton);
     
@@ -341,52 +344,80 @@ class RaidAutomator {
     
     // Update Current Screen State
     if (isStartScreen) {
-      this.state.currentScreen = 'start';
-      
-      // Check if Came from Battle Screen
-      if (previousScreen === 'battle' && this.state.raidInProgress) {
-        this.handleRaidCompletion();
-      }
-      
-      // Reset Battle Tracking
-      this.state.raidInProgress = false;
-      this.state.autoCombatActive = false;
-      this.state.autoClickAttempted = false;
-      this.state.hasSeenAutoButton = false;
-      
-    } else if (isBattleScreen) {
-      this.state.currentScreen = 'battle';
-      
-      // Mark Raid as In Progress
-      if (!this.state.raidInProgress) {
-        this.state.raidInProgress = true;
-        this.state.lastRaidStartTime = Date.now();
-        this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
-
-        // Reset Auto Combat UI State
-        this.state.hasSeenAutoButton = false;
+        this.state.currentScreen = 'start';
+        
+        // Check if Came from Battle Screen
+        if (previousScreen === 'battle' && this.state.raidInProgress) {
+            this.handleRaidCompletion();
+        }
+        
+        // Reset Battle Tracking
+        this.state.raidInProgress = false;
         this.state.autoCombatActive = false;
         this.state.autoClickAttempted = false;
-      }
-
-      if (!this.state.hasSeenAutoButton) {
-        this.state.hasSeenAutoButton = true;
-      }
-      
-    } else {
-      if (urlChanged && previousScreen === 'battle' && this.state.raidInProgress) {
-        const wasBattleUrl = this.state.lastUrl.includes('/#raid/') ||
-                          this.state.lastUrl.includes('/#battle/');
-        const isNotBattleUrl = !currentUrl.includes('/#raid/') &&
-                          !currentUrl.includes('/#battle/');
+        this.state.hasSeenAutoButton = false;
         
-        if (wasBattleUrl && isNotBattleUrl) {
-          // Debug Log
-          // console.log('🎯 URL Change Detected: Raid Completion.');
-          this.handleRaidCompletion();
-          this.state.raidInProgress = false;
+    } else if (isBattleScreen) {
+        this.state.currentScreen = 'battle';
+        
+        // Mark Raid as In Progress
+        if (!this.state.raidInProgress) {
+            this.state.raidInProgress = true;
+            this.state.lastRaidStartTime = Date.now();
+            this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
+
+            // Reset Auto Combat UI State
+            this.state.hasSeenAutoButton = false;
+            this.state.autoCombatActive = false;
+            this.state.autoClickAttempted = false;
         }
-      }
+
+        if (!this.state.hasSeenAutoButton) {
+            this.state.hasSeenAutoButton = true;
+        }
+        
+        // Check to Handle Navigation Auto Combat Reset
+        if (this.settings.autoCombat && 
+            (previousScreen !== 'battle' || urlChanged) &&
+            !this.state.autoCombatActive) {
+            
+            // Check Navigation Settings
+            chrome.storage.sync.get([
+                'goBackOnAttack', 
+                'reloadAttack', 
+                'goBackOnSummon', 
+                'reloadSummon', 
+                'reloadSkill'
+            ], (settings) => {
+                const hasNavigationSetting = settings.goBackOnAttack || 
+                                            settings.reloadAttack || 
+                                            settings.goBackOnSummon || 
+                                            settings.reloadSummon || 
+                                            settings.reloadSkill;
+                
+                if (hasNavigationSetting) {
+                    setTimeout(() => {
+                        this.checkAndReenableFullAuto();
+                        this.checkButtons();
+                    }, 1500);
+                }
+            });
+        }
+        
+    } else {
+        if (urlChanged && previousScreen === 'battle' && this.state.raidInProgress) {
+            const wasBattleUrl = this.state.lastUrl.includes('/#raid/') ||
+                              this.state.lastUrl.includes('/#battle/');
+            const isNotBattleUrl = !currentUrl.includes('/#raid/') &&
+                              !currentUrl.includes('/#battle/');
+            
+            if (wasBattleUrl && isNotBattleUrl) {
+                // Debug Log
+                // console.log('🎯 URL Change Detected: Raid Completion.');
+                this.handleRaidCompletion();
+                this.state.raidInProgress = false;
+            }
+        }
     }
 
     // Track URL Changes
@@ -598,6 +629,12 @@ class RaidAutomator {
       this.detectCurrentScreen();
       this.checkButtons();
     }, this.timing.CHECK_INTERVAL);
+
+    this.fullAutoCheckInterval = setInterval(() => {
+        if (this.settings.autoCombat && this.state.currentScreen === 'battle') {
+            this.checkAndReenableFullAuto();
+        }
+    }, 3000);
     
     let statusMessage = 'Automation Active: ';
     const features = [];
@@ -616,6 +653,10 @@ class RaidAutomator {
       clearInterval(this.interval);
       this.interval = null;
     }
+    if (this.fullAutoCheckInterval) {
+        clearInterval(this.fullAutoCheckInterval);
+        this.fullAutoCheckInterval = null;
+    }
     this.updateStatus('Automation Stopped');
   }
   
@@ -632,42 +673,75 @@ class RaidAutomator {
     
     // Check for Popups
     if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
+        this.handlePopupDetected();
+        return;
     }
     
     const now = Date.now();
     if (now - this.state.lastCheck < 500) return;
     this.state.lastCheck = now;
     
-    // Check for OK button if autoRaid is enabled AND in start screen
+    // Check for OK Button if Start Raid is enabled AND in Start Screen
     if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
-      const okButton = this.findOkButton();
-      if (okButton) {
-        // Check for Popup before Clicking OK Button
-        if (this.hasBlockingPopup().found) {
-          this.handlePopupDetected();
-          return;
+        const okButton = this.findOkButton();
+        if (okButton) {
+            // Check for Popup before Clicking OK Button
+            if (this.hasBlockingPopup().found) {
+                this.handlePopupDetected();
+                return;
+            }
+            this.clickRaidStart(okButton);
         }
-        this.clickRaidStart(okButton);
-      }
     }
     
-    // Check for Auto button if autoCombat is enabled AND in battle screen
+    // Check for Auto Button if Auto Combat is Enabled AND in Battle Screen
     if (this.settings.autoCombat && this.canClick('auto') && 
         this.state.currentScreen === 'battle' &&
         this.state.hasSeenAutoButton &&
         !this.state.autoClickAttempted &&
         !this.state.autoCombatActive) {
-      const autoButton = this.findAutoButton();
-      if (autoButton) {
-        // Check for Popup before Clicking Auto Button
-        if (this.hasBlockingPopup().found) {
-          this.handlePopupDetected();
-          return;
+        const autoButton = this.findAutoButton();
+        if (autoButton) {
+            // Check for Popup before Clicking Auto Button
+            if (this.hasBlockingPopup().found) {
+                this.handlePopupDetected();
+                return;
+            }
+            this.clickAutoCombat(autoButton);
         }
-        this.clickAutoCombat(autoButton);
-      }
+    }
+    
+    // Special Handling for Navigation Settings
+    if (this.settings.autoCombat && 
+        this.state.currentScreen === 'battle' &&
+        this.state.hasSeenAutoButton &&
+        !this.state.autoCombatActive) {
+        
+        // Get Navigation Settings
+        chrome.storage.sync.get([
+            'goBackOnAttack', 
+            'reloadAttack', 
+            'goBackOnSummon', 
+            'reloadSummon', 
+            'reloadSkill'
+        ], (settings) => {
+            const hasNavigationSetting = settings.goBackOnAttack || 
+                                        settings.reloadAttack || 
+                                        settings.goBackOnSummon || 
+                                        settings.reloadSummon || 
+                                        settings.reloadSkill;
+            
+            // If Navigation Setting is Enabled
+            if (hasNavigationSetting) {
+                const autoButton = this.findAutoButton();
+                if (autoButton && this.canClick('auto')) {
+                    if (Date.now() - this.cooldowns.auto > 1000) {
+                        console.log('🔄 Navigation detected, checking fullAuto button...');
+                        this.cooldowns.auto = Date.now() - this.timing.COOLDOWN;
+                    }
+                }
+            }
+        });
     }
   }
   
@@ -830,7 +904,7 @@ class RaidAutomator {
   }
   
   findOkButton() {
-    // Check both button types
+    // Check Both Button Types
     const button1 = document.querySelector('.btn-usual-ok.se-quest-start');
     const button2 = document.querySelector('.btn-usual-ok.btn-silent-se');
     
@@ -844,6 +918,28 @@ class RaidAutomator {
   findAutoButton() {
     const button = document.querySelector('.btn-auto');
     return button && this.isVisible(button) ? button : null;
+  }
+
+  async checkAndReenableFullAuto() {
+    // Check if Auto Combat is Enabled and in Battle Screen
+    if (!this.settings.autoCombat || this.state.currentScreen !== 'battle') {
+        return false;
+    }
+
+    // Check if Full Auto Button is Present
+    const autoButton = this.findAutoButton();
+    if (!autoButton) {
+        return false;
+    }
+
+    // Check if Full Auto is Active
+    if (this.state.autoCombatActive && this.state.autoClickAttempted) {
+        this.state.autoCombatActive = false;
+        this.state.autoClickAttempted = false;
+        return false;
+    }
+
+    return false;
   }
   
   isVisible(element) {
