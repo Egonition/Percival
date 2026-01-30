@@ -26,8 +26,7 @@
        "data/dropTables.js",
        "content-inventory.js",
        "break-manager.js",
-       "raid-automation.js",
-       "animation-blocker.js"
+       "raid-automation.js"
        ],
       "run_at": "document_idle"
     }
