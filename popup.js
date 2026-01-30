@@ -17,7 +17,126 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // --- Settings Tab ---
+  // --- Drop List Tab ---
+  const dropContainer = document.getElementById("dropContainer");
+
+  function renderDrops(inventory) {
+    dropContainer.innerHTML = "";
+
+    if (!inventory || Object.keys(inventory).length === 0) {
+      const msg = document.createElement("em");
+      msg.textContent = "Inventory not loaded yet...";
+      dropContainer.appendChild(msg);
+      return;
+    }
+
+    if (typeof DROP_DATA !== 'undefined') {
+      DROP_DATA.forEach(categoryObj => {
+        const header = document.createElement("h3");
+        header.textContent = categoryObj.category || "Inventory";
+        dropContainer.appendChild(header);
+
+        const ul = document.createElement("ul");
+
+        categoryObj.drops.forEach(drop => {
+          const count = inventory[drop.id]?.count || 0;
+          const li = document.createElement("li");
+          if (count === 0) li.classList.add("empty");
+
+          const img = document.createElement("img");
+          img.src = inventory[drop.id]?.src || "";
+          img.alt = drop.name;
+          img.width = 32;
+          img.height = 32;
+          img.style.verticalAlign = "middle";
+          img.style.marginRight = "8px";
+          li.appendChild(img);
+
+          const text = document.createTextNode(`${drop.name} — ${count}`);
+          li.appendChild(text);
+
+          ul.appendChild(li);
+        });
+
+        dropContainer.appendChild(ul);
+      });
+    }
+  }
+
+  // Initial Render
+  chrome.storage.local.get("gbfInventory", (data) => {
+    renderDrops(data.gbfInventory || {});
+  });
+
+  // --- STATUS TAB ---
+  const statusContainer = document.getElementById("statusContainer");
+  
+  // Add heading to Status tab
+  const statusHeading = document.createElement("h3");
+  statusHeading.textContent = "Automation Status";
+  statusHeading.style.margin = "10px 0 4px";
+  statusHeading.style.fontSize = "14px";
+  statusHeading.style.borderBottom = "1px solid #ccc";
+  statusContainer.appendChild(statusHeading);
+
+  // Create and Append the Raid Status
+  const statusDiv = document.createElement("div");
+  statusDiv.id = "raidStatus";
+  statusDiv.style.margin = "15px 0 10px";
+  statusDiv.style.padding = "12px";
+  statusDiv.style.backgroundColor = "#f5f5f5";
+  statusDiv.style.borderRadius = "6px";
+  statusDiv.style.fontSize = "12px";
+  statusDiv.style.borderLeft = "4px solid #ddd";
+  statusDiv.style.minHeight = "60px";
+  statusDiv.innerHTML = `
+    <div style="color: #666; font-style: italic;">
+      Enable "Start Raid" or "Full Auto" to begin automation
+    </div>
+  `;
+  statusContainer.appendChild(statusDiv);
+
+  // Create and Append Break Controls
+  const breakControls = document.createElement("div");
+  breakControls.id = "breakControls";
+  breakControls.style.margin = "15px 0 10px";
+  breakControls.style.padding = "12px";
+  breakControls.style.backgroundColor = "#f5f5f5";
+  breakControls.style.borderRadius = "6px";
+  breakControls.style.fontSize = "12px";
+  breakControls.style.borderLeft = "4px solid #ddd";
+  breakControls.style.display = "none";
+  breakControls.innerHTML = `
+    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+      <div style="width: 10px; height: 10px; background-color: #4CAF50; border-radius: 50%; margin-right: 8px;"></div>
+      <strong style="color: #2e7d32;">BREAK CONTROLS</strong>
+    </div>
+    <div id="breakStatus" style="margin-left: 18px; font-size: 11px; line-height: 1.4;">
+      <div>✅ Ready - No active break</div>
+    </div>
+    <button id="forceEndBreakBtn" style="
+      width: 100%;
+      padding: 8px 12px;
+      background: #ff9800;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      margin-top: 10px;
+      display: none;
+    ">
+      ▶️ Force End Break
+    </button>
+  `;
+  statusContainer.appendChild(breakControls);
+
+  // Get References to Elements
+  const forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
+  const breakStatus = document.getElementById('breakStatus');
+
+  // --- SETTINGS TAB ---
   const labels = {
     goBackOnAttack: "Back On Attack",
     reloadAttack: "Reload On Attack",
@@ -28,7 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
     arcaMode: "Arca Mode",
     autoRaid: "Start Raid",
     autoCombat: "Full Auto",
-    enableBreaks: "Enable Breaks"
+    enableBreaks: "Enable Breaks",
+    skipAnimations: "Skip Animations"
   };
 
   const categories = {
@@ -37,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     "Attack Settings": ["goBackOnAttack", "reloadAttack"],
     "Skill Settings": ["reloadSkill"],
     "Summon Settings": ["goBackOnSummon", "reloadSummon"],
+    "UI Settings": ["skipAnimations"]
   };
 
   const allKeys = Object.values(categories).flat();
@@ -75,75 +196,87 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Raid Automation Status ---
-  const statusDiv = document.createElement("div");
-  statusDiv.id = "raidStatus";
-  statusDiv.style.margin = "15px 0 10px";
-  statusDiv.style.padding = "12px";
-  statusDiv.style.backgroundColor = "#f5f5f5";
-  statusDiv.style.borderRadius = "6px";
-  statusDiv.style.fontSize = "12px";
-  statusDiv.style.borderLeft = "4px solid #ddd";
-  statusDiv.style.minHeight = "60px";
-  statusDiv.innerHTML = `
-    <div style="color: #666; font-style: italic;">
-      Enable "Start Raid" or "Full Auto" to begin automation
-    </div>
-  `;
-  container.appendChild(statusDiv);
+  // Load Settings from Storage
+  chrome.storage.sync.get(storageDefaults, (data) => {
+    
+    // Debug Log
+    console.log('🔄 Loaded Settings from Storage:', data);
 
-  let breakControls = document.getElementById('breakControls');
-  let forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
-  let breakStatus = document.getElementById('breakStatus');
-  
-  // If break controls don't exist in HTML, create them
-  if (!breakControls) {
-    const breakControlsHTML = `
-      <div id="breakControls" style="
-        margin-top: 20px;
-        padding-top: 15px;
-        border-top: 1px solid #ccc;
-        display: none;
-      ">
-        <h4 style="margin: 0 0 10px 0; color: #2e7d32;">Break Controls</h4>
-        
-        <button id="forceEndBreakBtn" style="
-          width: 100%;
-          padding: 10px;
-          background: #ff9800;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: bold;
-          margin-bottom: 10px;
-        ">
-          ▶️ Force End Break
-        </button>
-        
-        <div id="breakStatus" style="
-          padding: 8px;
-          background: #f8f9fa;
-          border-radius: 6px;
-          font-size: 11px;
-          text-align: center;
-          border-left: 4px solid #4CAF50;
-          min-height: 20px;
-        ">
-          Break controls ready
-        </div>
-      </div>
-    `;
+    for (let key of allKeys) {
+      if (elements[key]) {
+        elements[key].checked = !!data[key];
+      }
+    }
+    // Initial
+    updateRaidStatusDisplay();
     
-    // Insert break controls after settings container
-    container.insertAdjacentHTML('beforeend', breakControlsHTML);
-    
-    // Get the newly created elements
-    breakControls = document.getElementById('breakControls');
-    forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
-    breakStatus = document.getElementById('breakStatus');
+    // Request Current Status from Content Script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { 
+          type: 'getStatus' 
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            // Content Script Not Available
+            console.log('Content script not available:', chrome.runtime.lastError.message);
+          } else if (response) {
+            updateRaidStatusDisplay(response);
+            updateBreakControls(response);
+          }
+        });
+      }
+    });
+  });
+
+  // Save Settings on Change
+  for (let key in elements) {
+    elements[key].onchange = e => {
+      const isChecked = e.target.checked;
+
+      // Debug Log
+      console.log(`🔄 Saving Setting: ${key}=${isChecked}`);
+      
+      // Save to Storage
+      chrome.storage.sync.set({ [key]: isChecked }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error saving to storage:', chrome.runtime.lastError);
+        }
+      });
+      
+      // Notify Content Script of Setting Change
+      if (key === 'autoRaid' || key === 'autoCombat') {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'updateSettings',
+              autoRaid: elements.autoRaid?.checked || false,
+              autoCombat: elements.autoCombat?.checked || false,
+              enableBreaks: elements.enableBreaks?.checked || false,
+              skipAnimations: elements.skipAnimations?.checked || false
+            }).catch(err => {
+              console.log('Content script not ready yet:', err);
+            });
+          }
+        });
+      }
+      
+      // Update Status Display
+      updateRaidStatusDisplay();
+    };
   }
+
+  // Listen for Storage Changes to Update UI
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'sync') {
+      for (let key in changes) {
+        if (elements[key]) {
+          elements[key].checked = !!changes[key].newValue;
+        }
+      }
+      // Update Status Display
+      updateRaidStatusDisplay();
+    }
+  });
 
   // Update Break Controls Visibility and State
   function updateBreakControls(breakData) {
@@ -181,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Update status display
       if (breakData.raidsSinceLastBreak !== undefined) {
-        breakStatus.innerHTML = `✅ Ready - ${breakData.raidsSinceLastBreak} Raids Since Last Break`;
+        breakStatus.innerHTML = `${breakData.raidsSinceLastBreak} Raids Since Last Break`;
         breakStatus.style.color = '#4CAF50';
         breakStatus.style.borderLeftColor = '#4CAF50';
       } else {
@@ -253,6 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const autoRaidEnabled = elements.autoRaid?.checked || false;
     const autoCombatEnabled = elements.autoCombat?.checked || false;
+    const enableBreaks = elements.enableBreaks?.checked || false;
     
     // If Message Provided, Use It to Update Status
     if (message && message.type === 'raidStatusUpdate') {
@@ -404,139 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Load Settings from Storage
-  chrome.storage.sync.get(storageDefaults, (data) => {
-    
-    // Debug Log
-    console.log('🔄 Loaded Settings from Storage:', data);
-
-    for (let key of allKeys) {
-      if (elements[key]) {
-        elements[key].checked = !!data[key];
-      }
-    }
-    // Initial
-    updateRaidStatusDisplay();
-    
-    // Request Current Status from Content Script
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { 
-          type: 'getStatus' 
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            // Content Script Not Available
-            console.log('Content script not available:', chrome.runtime.lastError.message);
-          } else if (response) {
-            updateRaidStatusDisplay(response);
-            updateBreakControls(response);
-          }
-        });
-      }
-    });
-  });
-
-  // Save Settings on Change
-  for (let key in elements) {
-    elements[key].onchange = e => {
-      const isChecked = e.target.checked;
-
-      // Debug Log
-      console.log(`🔄 Saving Setting: ${key}=${isChecked}`);
-      
-      // Save to Storage
-      chrome.storage.sync.set({ [key]: isChecked }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error saving to storage:', chrome.runtime.lastError);
-        }
-      });
-      
-      // Notify Content Script of Setting Change
-      if (key === 'autoRaid' || key === 'autoCombat') {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs[0]?.id) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-              type: 'updateSettings',
-              autoRaid: elements.autoRaid?.checked || false,
-              autoCombat: elements.autoCombat?.checked || false,
-              enableBreaks: elements.enableBreaks?.checked || false
-            }).catch(err => {
-              console.log('Content script not ready yet:', err);
-            });
-          }
-        });
-      }
-      
-      // Update Status Display
-      updateRaidStatusDisplay();
-    };
-  }
-
-  // Listen for Storage Changes to Update UI
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'sync') {
-      for (let key in changes) {
-        if (elements[key]) {
-          elements[key].checked = !!changes[key].newValue;
-        }
-      }
-      // Update Status Display
-      updateRaidStatusDisplay();
-    }
-  });
-
-  // --- Drop List Tab ---
-  const dropContainer = document.getElementById("dropContainer");
-
-  function renderDrops(inventory) {
-    dropContainer.innerHTML = "";
-
-    if (!inventory || Object.keys(inventory).length === 0) {
-      const msg = document.createElement("em");
-      msg.textContent = "Inventory not loaded yet...";
-      dropContainer.appendChild(msg);
-      return;
-    }
-
-    if (typeof DROP_DATA !== 'undefined') {
-      DROP_DATA.forEach(categoryObj => {
-        const header = document.createElement("h3");
-        header.textContent = categoryObj.category || "Inventory";
-        dropContainer.appendChild(header);
-
-        const ul = document.createElement("ul");
-
-        categoryObj.drops.forEach(drop => {
-          const count = inventory[drop.id]?.count || 0;
-          const li = document.createElement("li");
-          if (count === 0) li.classList.add("empty");
-
-          const img = document.createElement("img");
-          img.src = inventory[drop.id]?.src || "";
-          img.alt = drop.name;
-          img.width = 32;
-          img.height = 32;
-          img.style.verticalAlign = "middle";
-          img.style.marginRight = "8px";
-          li.appendChild(img);
-
-          const text = document.createTextNode(`${drop.name} — ${count}`);
-          li.appendChild(text);
-
-          ul.appendChild(li);
-        });
-
-        dropContainer.appendChild(ul);
-      });
-    }
-  }
-
-  // Initial Render
-  chrome.storage.local.get("gbfInventory", (data) => {
-    renderDrops(data.gbfInventory || {});
-  });
-
-  // Listen for Inventory Updates
+  // Listen for Updates
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "inventoryUpdated") {
       renderDrops(msg.inventory);
@@ -554,5 +556,4 @@ document.addEventListener('DOMContentLoaded', () => {
       updateBreakControls(msg);
     }
   });
-
 });

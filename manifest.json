@@ -1,6 +1,6 @@
 {
   "name": "Percival",
-  "version": "1.2",
+  "version": "1.3",
   "description": "GBF Script",
   "permissions": [
     "scripting",
@@ -26,7 +26,8 @@
        "data/dropTables.js",
        "content-inventory.js",
        "break-manager.js",
-       "raid-automation.js"
+       "raid-automation.js",
+       "animation-blocker.js"
        ],
       "run_at": "document_idle"
     }

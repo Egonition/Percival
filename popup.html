@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>Percival</title>
   <style>
-    body { font-family: sans-serif; padding: 10px; width: 300px; }
+    body { font-family: sans-serif; padding: 10px; width: 300px;}
     .tabs { margin-bottom: 10px; }
     .tab { cursor: pointer; padding: 5px 10px; border: 1px solid #ccc; display: inline-block; margin-right: 2px; }
     .tab.active { background: #eee; font-weight: bold; }
@@ -17,54 +17,24 @@
 <body>
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" data-tab="dropsContent">Drop List</button>
+    <button class="tab" data-tab="dropsContent">Drops</button>
+    <button class="tab" data-tab="statusContent">Status</button>
     <button class="tab" data-tab="settingsContent">Settings</button>
   </div>
 
-  <!-- Drop List -->
-  <div id="dropsContent" class="tab-content" style="display:block;">
+  <!-- Drops -->
+  <div id="dropsContent" class="tab-content" style="display:none;">
     <div id="dropContainer"></div>
   </div>
 
-  <!-- Settings -->
-  <div id="settingsContent" class="tab-content">
-    <div id="options"></div>
+  <!-- Status -->
+  <div id="statusContent" class="tab-content" style="display:none;">
+    <div id="statusContainer"></div>
+  </div>
 
-    <div id="breakControls" style="
-      margin-top: 20px;
-      padding-top: 15px;
-      border-top: 1px solid #ccc;
-      display: none;
-    ">
-      <h4 style="margin: 0 0 10px 0; color: #2e7d32;">Break Controls</h4>
-      
-      <button id="forceEndBreakBtn" style="
-        width: 100%;
-        padding: 10px;
-        background: #ff9800;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: bold;
-        margin-bottom: 10px;
-      ">
-        ▶️ Force End Break
-      </button>
-      
-      <div id="breakStatus" style="
-        padding: 8px;
-        background: #f8f9fa;
-        border-radius: 6px;
-        font-size: 11px;
-        text-align: center;
-        border-left: 4px solid #4CAF50;
-        min-height: 20px;
-      ">
-        Break Controls Ready
-      </div>
-    </div>
+  <!-- Settings -->
+  <div id="settingsContent" class="tab-content" style="display:none;">
+    <div id="options"></div>
   </div>
 
   <!-- Scripts -->
