@@ -8,9 +8,9 @@
     let styleElement = null;
     
     // Load Setting from Storage
-    chrome.storage.sync.get(['skipAnimations'], (result) => {
-        if (result.skipAnimations !== undefined) {
-            isEnabled = result.skipAnimations;
+    chrome.storage.sync.get(['blockAnimations'], (result) => {
+        if (result.blockAnimations !== undefined) {
+            isEnabled = result.blockAnimations;
 
             // Debug Log
             // console.log('⚙️ Animation Blocker Setting:', isEnabled ? 'ENABLED' : 'DISABLED');
@@ -21,8 +21,8 @@
     
     // Listen for Setting Changes
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync' && changes.skipAnimations) {
-            isEnabled = changes.skipAnimations.newValue;
+        if (namespace === 'sync' && changes.blockAnimations) {
+            isEnabled = changes.blockAnimations.newValue;
 
             // Debug Log
             // console.log('⚙️ Animation Blocker Setting Changed:', isEnabled ? 'ENABLED' : 'DISABLED');
@@ -33,8 +33,8 @@
     
     // Listen for Direct Messages from Popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.type === 'updateSettings' && message.skipAnimations !== undefined) {
-            isEnabled = message.skipAnimations;
+        if (message.type === 'updateSettings' && message.blockAnimations !== undefined) {
+            isEnabled = message.blockAnimations;
 
             // Debug Log
             // console.log('⚙️ Animation Blocker Setting Updated:', isEnabled ? 'ENABLED' : 'DISABLED');

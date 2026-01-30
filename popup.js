@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     autoRaid: "Start Raid",
     autoCombat: "Full Auto",
     enableBreaks: "Enable Breaks",
-    skipAnimations: "Skip Animations"
+    blockAnimations: "Block Animations"
   };
 
   const categories = {
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     "Attack Settings": ["goBackOnAttack", "reloadAttack"],
     "Skill Settings": ["reloadSkill"],
     "Summon Settings": ["goBackOnSummon", "reloadSummon"],
-    "UI Settings": ["skipAnimations"]
+    "UI Settings": ["blockAnimations"]
   };
 
   const allKeys = Object.values(categories).flat();
@@ -252,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
               autoRaid: elements.autoRaid?.checked || false,
               autoCombat: elements.autoCombat?.checked || false,
               enableBreaks: elements.enableBreaks?.checked || false,
-              skipAnimations: elements.skipAnimations?.checked || false
+              blockAnimations: elements.blockAnimations?.checked || false
             }).catch(err => {
               console.log('Content script not ready yet:', err);
             });
