@@ -20,19 +20,6 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
   }
 });
 
-// Toggle Arca Mode
-function toggleArcaMode() {
-  console.log("Toggle Arca");
-  const params = ["reloadSkill", "redirectFarm", "arcaMode"];
-
-  chrome.storage.sync.get(params, (result) => {
-    for (const key of params) {
-      result[key] = !result[key];
-    }
-    chrome.storage.sync.set(result, () => console.log("Arca toggled"));
-  });
-}
-
 // Deactivate All
 function deactivateAll() {
   console.log("Deactivate All");
@@ -44,7 +31,6 @@ function deactivateAll() {
 }
 
 let keyboardShortcut = {
-  "toggle-aracarum-mode": toggleArcaMode,
   "deactivate-all": deactivateAll,
 };
 
@@ -124,11 +110,10 @@ chrome.webRequest.onBeforeRequest.addListener(
 // Redirect Farm (Normal Raid)
 chrome.webRequest.onCompleted.addListener(
   function (details) {
-    chrome.storage.sync.get(["redirectFarm", "arcaMode"], function (data) {
+    chrome.storage.sync.get(["redirectFarm"], function (data) {
       if (data.redirectFarm) {
-        console.log("Redirect active");
-        let key = data.arcaMode ? "arca" : "farm";
-        chrome.bookmarks.search({ title: key }, function (result) {
+        console.log("Redirect Active");
+        chrome.bookmarks.search({ title: "farm" }, function (result) {
           if (result[0] && result[0].url) {
             console.log("Found", result[0].url);
             setTimeout(() => {
@@ -150,11 +135,10 @@ chrome.webRequest.onCompleted.addListener(
 // Redirect Farm (Guild War)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" && tab.url?.includes("#result_multi/")) {
-    chrome.storage.sync.get(["redirectFarm", "arcaMode"], function (data) {
+    chrome.storage.sync.get(["redirectFarm"], function (data) {
       if (data.redirectFarm) {
-        console.log("Redirect active (fragment)");
-        let key = data.arcaMode ? "arca" : "farm";
-        chrome.bookmarks.search({ title: key }, function (result) {
+        console.log("Redirect Active");
+        chrome.bookmarks.search({ title: "farm" }, function (result) {
           if (result[0] && result[0].url) {
             console.log("Found", result[0].url);
             setTimeout(() => {
@@ -170,7 +154,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Set Storage Defaults on Install
 chrome.runtime.onInstalled.addListener(function () {
   chrome.storage.sync.set(storageDefaults, () => {
-    console.log("Storage defaults applied:", storageDefaults);
+    console.log("Storage Defaults Applied:", storageDefaults);
   });
 
   chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {

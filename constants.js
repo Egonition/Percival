@@ -8,7 +8,6 @@ const allKeys = [
   "reloadSummon",
   "reloadSkill",
   "redirectFarm",
-  "arcaMode",
   "autoRaid",
   "autoCombat"
 ];
@@ -21,7 +20,6 @@ const storageDefaults = {
   reloadSummon: false,
   reloadSkill: false,
   redirectFarm: false,
-  arcaMode: false,
   autoRaid: false,
   autoCombat: false
 };
@@ -31,6 +29,6 @@ const categories = {
   "Attack Options": ["goBackOnAttack", "reloadAttack"],
   "Summon Options": ["goBackOnSummon", "reloadSummon"],
   "Skill Options": ["reloadSkill"],
-  "Redirect Options": ["redirectFarm", "arcaMode"],
+  "Redirect Options": ["redirectFarm"],
   "Auto Raid": ["autoRaid", "autoCombat"]
 };

@@ -25,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
     reloadSummon: "Reload On Summon",
     reloadSkill: "Reload On Skill",
     redirectFarm: "Redirect to Farm",
-    arcaMode: "Arca Mode",
     autoRaid: "Start Raid",
     autoCombat: "Full Auto",
     enableBreaks: "Enable Breaks"
@@ -33,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const categories = {
     "Automation": ["autoRaid", "autoCombat", "enableBreaks"],
-    "Navigation": ["arcaMode", "redirectFarm"],
+    "Navigation": ["redirectFarm"],
     "Attack Settings": ["goBackOnAttack", "reloadAttack"],
     "Skill Settings": ["reloadSkill"],
     "Summon Settings": ["goBackOnSummon", "reloadSummon"],
