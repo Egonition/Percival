@@ -88,15 +88,28 @@ class RaidAutomator {
     this.setupListeners();
     this.setupObserver();
 
-    // Default to PLAYING - Automation Should Run By Default if Features are Enabled
-    const breakStatus = this.breakManager.getStatus();
-    if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
-      this.start();
-      chrome.storage.local.set({ isPlaying: true });
-    } else {
-      chrome.storage.local.set({ isPlaying: false });
-      this.updateStatus('Ready - Enable features to start');
-    }
+    // Check Saved Play State
+    chrome.storage.local.get(['isPlaying'], (data) => {
+      const shouldBePlaying = data.isPlaying !== undefined ? data.isPlaying : true;
+      
+      if (shouldBePlaying) {
+        // User Wants Automation Running
+        const breakStatus = this.breakManager.getStatus();
+        if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
+          this.start();
+        } else if (breakStatus.isOnBreak) {
+          chrome.storage.local.set({ isPlaying: true });
+          this.updateStatus('On break - Will Resume Automatically');
+        } else {
+          // No features enabled
+          chrome.storage.local.set({ isPlaying: false });
+          this.updateStatus('Enable Features to Start');
+        }
+      } else {
+        // User explicitly paused
+        this.updateStatus('Paused - Click Start to Resume');
+      }
+    });
   }
   
   // Load Settings from Storage
@@ -182,7 +195,7 @@ class RaidAutomator {
       this.saveBreakManagerState();
       this.updateStatus('Break Ended.');
       
-      // Only Resume if Play State Says We Should Be Running
+      // Check if User Wants Automation Running
       chrome.storage.local.get(['isPlaying'], (data) => {
         if (data.isPlaying && (this.settings.autoRaid || this.settings.autoCombat)) {
           this.start();

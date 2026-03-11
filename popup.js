@@ -54,8 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.tabs.sendMessage(tabs[0].id, {
           type: 'toggleAutomation',
           action: isPlaying ? 'play' : 'pause'
-        }).then(response => {
-          console.log('✅ Automation Toggle Response:', response);
         }).catch(err => {
           console.log('Content Script Not Ready:', err);
         });
