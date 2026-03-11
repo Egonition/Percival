@@ -88,10 +88,14 @@ class RaidAutomator {
     this.setupListeners();
     this.setupObserver();
 
-    // Auto Start if Either Feature is Enabled and Not on Break
+    // Default to PLAYING - Automation Should Run By Default if Features are Enabled
     const breakStatus = this.breakManager.getStatus();
     if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
       this.start();
+      chrome.storage.local.set({ isPlaying: true });
+    } else {
+      chrome.storage.local.set({ isPlaying: false });
+      this.updateStatus('Ready - Enable features to start');
     }
   }
   
@@ -176,10 +180,14 @@ class RaidAutomator {
 
     this.breakManager.setOnBreakEndCallback(() => {
       this.saveBreakManagerState();
-      this.updateStatus('Break Ended. Resuming Automation...');
-      if (this.settings.autoRaid || this.settings.autoCombat) {
-        this.start();
-      }
+      this.updateStatus('Break Ended.');
+      
+      // Only Resume if Play State Says We Should Be Running
+      chrome.storage.local.get(['isPlaying'], (data) => {
+        if (data.isPlaying && (this.settings.autoRaid || this.settings.autoCombat)) {
+          this.start();
+        }
+      });
     });
   }
 
@@ -197,6 +205,22 @@ class RaidAutomator {
 
   setupListeners() {
     chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+      if (msg.type === 'toggleAutomation') {
+        if (msg.action === 'play') {
+          // Check if any features are enabled
+          if (this.settings.autoRaid || this.settings.autoCombat) {
+            this.start();
+            respond({ success: true, status: 'Started' });
+          } else {
+            respond({ success: false, status: 'No Features Enabled' });
+          }
+        } else if (msg.action === 'pause') {
+          this.stop();
+          respond({ success: true, status: 'Paused' });
+        }
+        return true;
+      }
+
       if (msg.type === 'updateSettings') {
         this.updateSettings(msg);
         respond({ success: true });
@@ -269,11 +293,10 @@ class RaidAutomator {
     chrome.storage.onChanged.addListener(changes => {
       if (changes.autoRaid || changes.autoCombat) {
         this.loadSettings().then(() => {
-          if ((this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
-            this.start();
-          }
-          else if (!this.settings.autoRaid && !this.settings.autoCombat && this.state.active) {
-            this.stop();
+          // Don't auto-start here - let the play button control this
+          // Just update status if we're currently running
+          if (this.state.active) {
+            this.updateStatus('Settings updated');
           }
         });
       }
@@ -502,12 +525,8 @@ class RaidAutomator {
     
     const popupInfo = this.hasBlockingPopup();
     if (popupInfo.found) {
-      // Update Local Settings
-      this.settings.autoRaid = false;
-      this.settings.autoCombat = false;
+      this.stop(); // This will set automationPlaying to false
       
-      this.stop();
-
       let statusMessage;
       if (popupInfo.type === 'AccessVerification') {
         statusMessage = `Access Verification Required. Please Complete the Verification Manually.`;
@@ -517,23 +536,6 @@ class RaidAutomator {
 
       this.updateStatus(statusMessage);
       
-      // Disable Checkboxes in Storage
-      chrome.storage.sync.set({
-        autoRaid: false,
-        autoCombat: false
-      }, () => {
-        // Console Log
-        console.log('🛑 Automation Disabled.');
-        
-        // Notify Background Script of Settings Change
-        this.safeSendMessage({
-          type: 'settingsChanged',
-          autoRaid: false,
-          autoCombat: false
-        });
-      });
-      
-      // Log Status
       const status = {
         type: 'popupDetected',
         active: false,
@@ -545,8 +547,7 @@ class RaidAutomator {
       this.safeSendMessage(status);
       chrome.storage.local.set({ raidStatus: status });
       
-      // Console Warning
-      console.warn('⚠️ Popup Detected.', popupInfo.text);
+      console.warn('⚠️ Popup Detected - Automation Paused.', popupInfo.text);
     }
   }
 
@@ -581,17 +582,22 @@ class RaidAutomator {
     if (this.breakManager && msg.enableBreaks !== undefined) {
       this.breakManager.updateSettings({ enableBreaks: msg.enableBreaks });
     }
-    
-    if ((this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
-      this.start();
-    }
-    else if (!this.settings.autoRaid && !this.settings.autoCombat && this.state.active) {
-      this.stop();
+
+    // Update Status
+    if (this.state.active) {
+      this.updateStatus('Settings Updated')
     }
   }
   
   start() {
     if (this.state.active) return;
+
+    // Check if on Break before Start
+    const breakStatus = this.breakManager.getStatus();
+    if (breakStatus.isOnBreak) {
+      this.updateStatus('On Break - Cannot Start');
+      return;
+    }
     
     this.state.active = true;
     this.interval = setInterval(() => {
@@ -606,6 +612,9 @@ class RaidAutomator {
     statusMessage += features.join(' + ');
     
     this.updateStatus(statusMessage);
+    
+    // Save Play State
+    chrome.storage.local.set({ isPlaying: true });
   }
   
   stop() {
@@ -617,6 +626,15 @@ class RaidAutomator {
       this.interval = null;
     }
     this.updateStatus('Automation Stopped');
+    
+    // Save Play State
+    chrome.storage.local.set({ isPlaying: false });
+  }
+
+  shouldBeRunning() {
+    // Check if Automation Features are Enabled AND NOT on Break
+    const breakStatus = this.breakManager.getStatus();
+    return (this.settings.autoRaid || this.settings.autoCombat) && !breakStatus.isOnBreak;
   }
   
   getRandomDelay(min, max) {

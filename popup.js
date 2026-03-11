@@ -20,44 +20,47 @@ document.addEventListener('DOMContentLoaded', () => {
   // Play/Pause Functionality
   const playPauseBtn = document.getElementById('playPauseBtn');
   const deactivateTopBtn = document.getElementById('deactivateTopBtn');
-  let isPlaying = false;
+  let isPlaying = true;
 
   // Load Saved Play State
   chrome.storage.local.get('isPlaying', (data) => {
-    isPlaying = data.isPlaying || false;
+    isPlaying = data.isPlaying !== undefined ? data.isPlaying : true;
     updatePlayPauseButton();
   });
+
+  function updatePlayPauseButton() {
+    if (isPlaying) {
+      playPauseBtn.textContent = '⏸️ Pause';
+      playPauseBtn.style.backgroundColor = '#ff9800';
+    } else {
+      playPauseBtn.textContent = '▶️ Start';
+      playPauseBtn.style.backgroundColor = '#4CAF50'; 
+    }
+  }
 
   // Play/Pause Button Click
   playPauseBtn.addEventListener('click', () => {
     isPlaying = !isPlaying;
-
+    
     // Save State
     chrome.storage.local.set({ isPlaying });
-
+    
     // Update Button Appearance
     updatePlayPauseButton();
-
+    
     // Send Command to Content Script
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(tabs[0].id, {
           type: 'toggleAutomation',
           action: isPlaying ? 'play' : 'pause'
+        }).then(response => {
+          console.log('✅ Automation Toggle Response:', response);
         }).catch(err => {
           console.log('Content Script Not Ready:', err);
         });
       }
     });
-
-    // Update Status Display if on Settings Tab
-    if (document.getElementById('settingsContent').style.display === 'block') {
-      updateRaidStatusDisplay({
-        type: 'raidStatusUpdate',
-        active: isPlaying,
-        lastAction: isPlaying ? 'Automation Started' : 'Automation Paused'
-      });
-    }
   });
 
   // Deactivate All from Top Button
@@ -100,16 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
       updateRaidStatusDisplay();
     }
   });
-
-  function updatePlayPauseButton() {
-    if (isPlaying) {
-      playPauseBtn.textContent = '⏸️ Pause';
-      playPauseBtn.classList.add('playing');
-    } else {
-      playPauseBtn.textContent = '▶️ Start';
-      playPauseBtn.classList.remove('playing');
-    }
-  }
 
   // --- Settings Tab ---
   const labels = {
