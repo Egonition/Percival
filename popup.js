@@ -17,6 +17,100 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Play/Pause Functionality
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const deactivateTopBtn = document.getElementById('deactivateTopBtn');
+  let isPlaying = false;
+
+  // Load Saved Play State
+  chrome.storage.local.get('isPlaying', (data) => {
+    isPlaying = data.isPlaying || false;
+    updatePlayPauseButton();
+  });
+
+  // Play/Pause Button Click
+  playPauseBtn.addEventListener('click', () => {
+    isPlaying = !isPlaying;
+
+    // Save State
+    chrome.storage.local.set({ isPlaying });
+
+    // Update Button Appearance
+    updatePlayPauseButton();
+
+    // Send Command to Content Script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'toggleAutomation',
+          action: isPlaying ? 'play' : 'pause'
+        }).catch(err => {
+          console.log('Content Script Not Ready:', err);
+        });
+      }
+    });
+
+    // Update Status Display if on Settings Tab
+    if (document.getElementById('settingsContent').style.display === 'block') {
+      updateRaidStatusDisplay({
+        type: 'raidStatusUpdate',
+        active: isPlaying,
+        lastAction: isPlaying ? 'Automation Started' : 'Automation Paused'
+      });
+    }
+  });
+
+  // Deactivate All from Top Button
+  deactivateTopBtn.addEventListener('click', () => {
+    // Turn Off All Checkboxes
+    allKeys.forEach(key => {
+      if (elements[key]) {
+        elements[key].checked = false;
+      }
+    });
+
+    // Save to Storage
+    const allFalse = {};
+    allKeys.forEach(key => {
+      allFalse[key] = false;
+    });
+    chrome.storage.sync.set(allFalse);
+
+    // If Playing, Pause
+    if (isPlaying) {
+      isPlaying = false;
+      chrome.storage.local.set({ isPlaying: false });
+      updatePlayPauseButton();
+
+      // Send Pause Command
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'toggleAutomation',
+            action: 'pause'
+          }).catch(err => {
+            console.log('Content Script Not Ready:', err);
+          });
+        }
+      });
+    }
+
+    // Update Status
+    if (document.getElementById('settingsContent').style.display === 'block') {
+      updateRaidStatusDisplay();
+    }
+  });
+
+  function updatePlayPauseButton() {
+    if (isPlaying) {
+      playPauseBtn.textContent = '⏸️ Pause';
+      playPauseBtn.classList.add('playing');
+    } else {
+      playPauseBtn.textContent = '▶️ Start';
+      playPauseBtn.classList.remove('playing');
+    }
+  }
+
   // --- Settings Tab ---
   const labels = {
     goBackOnAttack: "Back On Attack",
@@ -49,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById("options");
   let elements = {};
 
-  // Clear container first
+  // Clear Container
   container.innerHTML = '';
 
   for (let [categoryName, keys] of Object.entries(categories)) {
@@ -80,41 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
       elements[key] = checkbox;
     });
   }
-
-  // Add Deactivate All Button
-  const buttonRow = document.createElement("div");
-  buttonRow.style.gridColumn = "span 2";
-  buttonRow.style.display = "flex";
-  buttonRow.style.justifyContent = "center";
-  buttonRow.style.marginTop = "4px";
-  buttonRow.style.marginBottom = "4px";
-  buttonRow.style.width = "100%";
-
-  const deactivateBtn = document.createElement("button");
-  deactivateBtn.id = "deactivateAll";
-  deactivateBtn.textContent = "Deactivate All";
-  deactivateBtn.style.padding = "6px 12px";
-  deactivateBtn.style.backgroundColor = "#f44336";
-  deactivateBtn.style.color = "white";
-  deactivateBtn.style.border = "none";
-  deactivateBtn.style.borderRadius = "4px";
-  deactivateBtn.style.cursor = "pointer";
-  deactivateBtn.style.fontSize = "12px";
-  deactivateBtn.style.margin = "0 auto";
-
-  buttonRow.appendChild(deactivateBtn);
-  container.appendChild(buttonRow);
-
-  // Deactivate All Functionality
-  deactivateBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'deactivateAll' });
-    allKeys.forEach(key => {
-      if (elements[key]) {
-        elements[key].checked = false;
-      }
-    });
-    updateRaidStatusDisplay();
-  });
 
   // --- Raid Automation Status (left column) ---
   const statusDiv = document.createElement("div");
@@ -304,114 +363,125 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Update Raid Status Display
   function updateRaidStatusDisplay(message = null) {
-      if (!statusDiv) return;
-      
-      const autoRaidEnabled = elements.autoRaid?.checked || false;
-      const autoCombatEnabled = elements.autoCombat?.checked || false;
-      
-      if (message && message.type === 'raidStatusUpdate') {
-          if (message.active) {
-              let features = [];
-              if (autoRaidEnabled) features.push('Raid');
-              if (autoCombatEnabled) features.push('Auto');
+    if (!statusDiv) return;
+    
+    const autoRaidEnabled = elements.autoRaid?.checked || false;
+    const autoCombatEnabled = elements.autoCombat?.checked || false;
+    const enableBreaks = elements.enableBreaks?.checked || false;
+    
+    if (message && message.type === 'raidStatusUpdate') {
+      if (message.active && isPlaying) {
+        let features = [];
+        if (autoRaidEnabled) features.push('Raid');
+        if (autoCombatEnabled) features.push('Auto');
 
-              statusDiv.innerHTML = `
-                  <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
-                      <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
-                      <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${features.join('+')}</strong>
-                  </div>
-                  <div style="font-size: 9px; line-height: 1.2; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                      ${message.lastAction?.substring(0, 20) || 'Monitoring...'}
-                  </div>
-                  <style>
-                      @keyframes pulse {
-                          0% { opacity: 1; }
-                          50% { opacity: 0.5; }
-                          100% { opacity: 1; }
-                      }
-                  </style>
-              `;
-              statusDiv.style.backgroundColor = "#e8f5e8";
-              statusDiv.style.borderLeftColor = "#4CAF50";
-          } else {
-              statusDiv.innerHTML = `
-                  <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
-                      <div style="width: 6px; height: 6px; background-color: #9e9e9e; border-radius: 50%; margin-right: 4px; flex-shrink: 0;"></div>
-                      <strong style="color: #666; font-size: 10px;">INACTIVE</strong>
-                  </div>
-                  <div style="font-size: 9px; color: #777; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                      Enable features
-                  </div>
-              `;
-              statusDiv.style.backgroundColor = "#f5f5f5";
-              statusDiv.style.borderLeftColor = "#ddd";
-          }
-          return;
-      }
-      
-      if (autoRaidEnabled || autoCombatEnabled) {
-          let features = [];
-          if (autoRaidEnabled) features.push('Raid');
-          if (autoCombatEnabled) features.push('Auto');
-
-          let statusMessage = 'Ready';
-          if (autoRaidEnabled && !autoCombatEnabled) {
-              statusMessage = 'Waiting for raid';
-          } else if (!autoRaidEnabled && autoCombatEnabled) {
-              statusMessage = 'Waiting for battle';
-          }
-          
-          statusDiv.innerHTML = `
-              <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
-                  <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
-                  <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${features.join('+')}</strong>
-              </div>
-              <div style="font-size: 9px; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  ${statusMessage}
-              </div>
-          `;
-          statusDiv.style.backgroundColor = "#e8f5e8";
-          statusDiv.style.borderLeftColor = "#4CAF50";
+        statusDiv.innerHTML = `
+          <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+            <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
+            <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">▶️ ${features.join('+')}</strong>
+          </div>
+          <div style="font-size: 9px; line-height: 1.2; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            📝 ${message.lastAction || 'Running...'}
+          </div>
+          <style>
+            @keyframes pulse {
+              0% { opacity: 1; }
+              50% { opacity: 0.5; }
+              100% { opacity: 1; }
+            }
+          </style>
+        `;
+        statusDiv.style.backgroundColor = "#e8f5e8";
+        statusDiv.style.borderLeftColor = "#4CAF50";
       } else {
-          statusDiv.innerHTML = `
-              <div style="color: #666; font-style: italic; font-size: 10px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  Enable features
-              </div>
-          `;
-          statusDiv.style.backgroundColor = "#f5f5f5";
-          statusDiv.style.borderLeftColor = "#ddd";
+        statusDiv.innerHTML = `
+          <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+            <div style="width: 6px; height: 6px; background-color: #9e9e9e; border-radius: 50%; margin-right: 4px; flex-shrink: 0;"></div>
+            <strong style="color: #666; font-size: 10px;">⏸️ PAUSED</strong>
+          </div>
+          <div style="font-size: 9px; color: #777; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${message.lastAction || 'Click Start to begin'}
+          </div>
+        `;
+        statusDiv.style.backgroundColor = "#f5f5f5";
+        statusDiv.style.borderLeftColor = "#ddd";
       }
+      return;
+    }
+      
+    if (autoRaidEnabled || autoCombatEnabled) {
+        let features = [];
+        if (autoRaidEnabled) features.push('Raid');
+        if (autoCombatEnabled) features.push('Auto');
+
+        let statusMessage = 'Ready';
+        if (autoRaidEnabled && !autoCombatEnabled) {
+            statusMessage = 'Waiting for raid';
+        } else if (!autoRaidEnabled && autoCombatEnabled) {
+            statusMessage = 'Waiting for battle';
+        }
+        
+        statusDiv.innerHTML = `
+            <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+                <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
+                <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${features.join('+')}</strong>
+            </div>
+            <div style="font-size: 9px; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                ${statusMessage}
+            </div>
+        `;
+        statusDiv.style.backgroundColor = "#e8f5e8";
+        statusDiv.style.borderLeftColor = "#4CAF50";
+    } else {
+        statusDiv.innerHTML = `
+            <div style="color: #666; font-style: italic; font-size: 10px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                Enable features
+            </div>
+        `;
+        statusDiv.style.backgroundColor = "#f5f5f5";
+        statusDiv.style.borderLeftColor = "#ddd";
+    }
   }
 
   // Handle Popup Detected Message
   function handlePopupDetected(message) {
     if (!statusDiv) return;
     
+    // If Automation is Playing, Pause it
+    if (isPlaying) {
+      isPlaying = false;
+      chrome.storage.local.set({ isPlaying: false });
+      updatePlayPauseButton();
+      
+      // Send Pause Command to Content Script
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'toggleAutomation',
+            action: 'pause'
+          }).catch(err => {
+            console.log('Content Script Not Ready:', err);
+          });
+        }
+      });
+    }
+    
+    const popupText = message.popupInfo?.text || 'Unknown Popup';
+    
     statusDiv.innerHTML = `
-      <div style="display: flex; align-items: center; margin-bottom: 4px;">
-        <div style="width: 8px; height: 8px; background-color: #FF5722; border-radius: 50%; margin-right: 6px;"></div>
-        <strong style="color: #D32F2F; font-size: 11px;">PAUSED</strong>
+      <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+        <div style="width: 6px; height: 6px; background-color: #FF5722; border-radius: 50%; margin-right: 4px; flex-shrink: 0;"></div>
+        <strong style="color: #D32F2F; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">⚠️ POPUP DETECTED</strong>
       </div>
-      <div style="font-size: 10px; line-height: 1.2;">
-        <div>⚠️ Popup detected</div>
-        <div style="color: #FF9800;">Close to resume</div>
+      <div style="font-size: 9px; line-height: 1.2; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        ${popupText}
+      </div>
+      <div style="font-size: 8px; color: #FF9800; margin-top: 2px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        Automation Paused - Close Popup and Click Start
       </div>
     `;
     statusDiv.style.backgroundColor = "#FFEBEE";
     statusDiv.style.borderLeftColor = "#FF5722";
-    
-    const autoRaidCheckbox = document.querySelector('#autoRaid');
-    const autoCombatCheckbox = document.querySelector('#autoCombat');
-    
-    if (autoRaidCheckbox) autoRaidCheckbox.checked = false;
-    if (autoCombatCheckbox) autoCombatCheckbox.checked = false;
-    
-    if (elements.autoRaid) {
-      chrome.storage.sync.set({ autoRaid: false });
-    }
-    if (elements.autoCombat) {
-      chrome.storage.sync.set({ autoCombat: false });
-    }
   }
 
   // Load Settings from Storage
