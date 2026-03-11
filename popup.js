@@ -49,154 +49,161 @@ document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById("options");
   let elements = {};
 
+  // Clear container first
+  container.innerHTML = '';
+
   for (let [categoryName, keys] of Object.entries(categories)) {
     const header = document.createElement("h3");
     header.textContent = categoryName;
-    header.style.margin = "10px 0 4px";
+    header.style.margin = "8px 0 2px";
     header.style.fontSize = "14px";
     header.style.borderBottom = "1px solid #ccc";
+    header.style.gridColumn = "span 2";
     container.appendChild(header);
 
     keys.forEach(key => {
-      const label = document.createElement("label");
-      label.style.display = "block";
-      label.style.margin = "4px 0";
+      const div = document.createElement("div");
+      div.className = "setting-item";
 
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.id = key;
 
-      label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(" " + labels[key]));
-      container.appendChild(label);
+      const label = document.createElement("label");
+      label.htmlFor = key;
+      label.textContent = " " + labels[key];
+
+      div.appendChild(checkbox);
+      div.appendChild(label);
+      container.appendChild(div);
 
       elements[key] = checkbox;
     });
   }
 
-  // --- Raid Automation Status ---
+  // Add Deactivate All Button
+  const buttonRow = document.createElement("div");
+  buttonRow.style.gridColumn = "span 2";
+  buttonRow.style.display = "flex";
+  buttonRow.style.justifyContent = "center";
+  buttonRow.style.marginTop = "4px";
+  buttonRow.style.marginBottom = "4px";
+  buttonRow.style.width = "100%";
+
+  const deactivateBtn = document.createElement("button");
+  deactivateBtn.id = "deactivateAll";
+  deactivateBtn.textContent = "Deactivate All";
+  deactivateBtn.style.padding = "6px 12px";
+  deactivateBtn.style.backgroundColor = "#f44336";
+  deactivateBtn.style.color = "white";
+  deactivateBtn.style.border = "none";
+  deactivateBtn.style.borderRadius = "4px";
+  deactivateBtn.style.cursor = "pointer";
+  deactivateBtn.style.fontSize = "12px";
+  deactivateBtn.style.margin = "0 auto";
+
+  buttonRow.appendChild(deactivateBtn);
+  container.appendChild(buttonRow);
+
+  // Deactivate All Functionality
+  deactivateBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'deactivateAll' });
+    allKeys.forEach(key => {
+      if (elements[key]) {
+        elements[key].checked = false;
+      }
+    });
+    updateRaidStatusDisplay();
+  });
+
+  // --- Raid Automation Status (left column) ---
   const statusDiv = document.createElement("div");
   statusDiv.id = "raidStatus";
-  statusDiv.style.margin = "15px 0 10px";
-  statusDiv.style.padding = "12px";
+  statusDiv.style.gridColumn = "1";
+  statusDiv.style.padding = "8px";
   statusDiv.style.backgroundColor = "#f5f5f5";
   statusDiv.style.borderRadius = "6px";
-  statusDiv.style.fontSize = "12px";
+  statusDiv.style.fontSize = "11px";
   statusDiv.style.borderLeft = "4px solid #ddd";
-  statusDiv.style.minHeight = "60px";
+  statusDiv.style.minHeight = "45px";
+  statusDiv.style.overflow = "hidden";
+  statusDiv.style.wordWrap = "break-word";
+  statusDiv.style.marginTop = "4px";
+  statusDiv.style.marginBottom = "6px";
   statusDiv.innerHTML = `
-    <div style="color: #666; font-style: italic;">
-      Enable "Start Raid" or "Full Auto" to begin automation
+    <div style="color: #666; font-style: italic; font-size: 11px;">
+      Enable automation features
     </div>
   `;
   container.appendChild(statusDiv);
 
-  let breakControls = document.getElementById('breakControls');
-  let forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
-  let breakStatus = document.getElementById('breakStatus');
-  
-  // If break controls don't exist in HTML, create them
-  if (!breakControls) {
-    const breakControlsHTML = `
-      <div id="breakControls" style="
-        margin-top: 20px;
-        padding-top: 15px;
-        border-top: 1px solid #ccc;
-        display: none;
-      ">
-        <h4 style="margin: 0 0 10px 0; color: #2e7d32;">Break Controls</h4>
-        
-        <button id="forceEndBreakBtn" style="
-          width: 100%;
-          padding: 10px;
-          background: #ff9800;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: bold;
-          margin-bottom: 10px;
-        ">
-          ▶️ Force End Break
-        </button>
-        
-        <div id="breakStatus" style="
-          padding: 8px;
-          background: #f8f9fa;
-          border-radius: 6px;
-          font-size: 11px;
-          text-align: center;
-          border-left: 4px solid #4CAF50;
-          min-height: 20px;
-        ">
-          Break controls ready
-        </div>
-      </div>
-    `;
-    
-    // Insert break controls after settings container
-    container.insertAdjacentHTML('beforeend', breakControlsHTML);
-    
-    // Get the newly created elements
-    breakControls = document.getElementById('breakControls');
-    forceEndBreakBtn = document.getElementById('forceEndBreakBtn');
-    breakStatus = document.getElementById('breakStatus');
-  }
+  // --- Break Controls (right column) ---
+  let breakControls = document.createElement("div");
+  breakControls.id = "breakControls";
+  breakControls.style.gridColumn = "2";
+  breakControls.style.padding = "6px";
+  breakControls.style.backgroundColor = "#f8f9fa";
+  breakControls.style.borderRadius = "6px";
+  breakControls.style.borderLeft = "4px solid #4CAF50";
+  breakControls.style.display = "none";
+  breakControls.style.fontSize = "10px";
+  breakControls.style.textAlign = "center";
+  breakControls.style.minWidth = "0";
+  breakControls.style.overflow = "hidden";
+  breakControls.style.marginTop = "4px";
+  breakControls.style.marginBottom = "6px";
 
-  // Update Break Controls Visibility and State
-  function updateBreakControls(breakData) {
-    if (!breakData) return;
-    
-    // Debug Log
-    console.log('🔧 Updating Break Controls With:', breakData);
-    
-    // Always show break controls
-    breakControls.style.display = 'block';
-    
-    if (breakData.isOnBreak) {
-      // Currently on Break - show End button
-      forceEndBreakBtn.style.display = 'block';
-      
-      // Update button text with time remaining
-      if (breakData.timeLeft && breakData.timeLeft > 0) {
-        const minutes = Math.floor(breakData.timeLeft / 60000);
-        const seconds = Math.floor((breakData.timeLeft % 60000) / 1000);
-        forceEndBreakBtn.innerHTML = `▶️ Force End Break (${minutes}m ${seconds}s left)`;
-        
-        // Update status display
-        breakStatus.innerHTML = `⏸️ On Break - ${minutes}m ${seconds}s remaining`;
-        breakStatus.style.color = '#ff9800';
-        breakStatus.style.borderLeftColor = '#ff9800';
-      } else {
-        forceEndBreakBtn.innerHTML = '▶️ Force End Break';
-        breakStatus.innerHTML = '⏸️ On break (time unknown)';
-        breakStatus.style.color = '#ff9800';
-        breakStatus.style.borderLeftColor = '#ff9800';
-      }
-    } else {
-      // Not on break - hide End button
-      forceEndBreakBtn.style.display = 'none';
-      
-      // Update status display
-      if (breakData.raidsSinceLastBreak !== undefined) {
-        breakStatus.innerHTML = `✅ Ready - ${breakData.raidsSinceLastBreak} Raids Since Last Break`;
-        breakStatus.style.color = '#4CAF50';
-        breakStatus.style.borderLeftColor = '#4CAF50';
-      } else {
-        breakStatus.innerHTML = '✅ No Active Break';
-        breakStatus.style.color = '#4CAF50';
-        breakStatus.style.borderLeftColor = '#4CAF50';
-      }
-    }
-  }
+  const breakTitle = document.createElement("div");
+  breakTitle.style.fontWeight = "bold";
+  breakTitle.style.color = "#2e7d32";
+  breakTitle.style.marginBottom = "2px";
+  breakTitle.style.fontSize = "10px";
+  breakTitle.style.whiteSpace = "nowrap";
+  breakTitle.style.overflow = "hidden";
+  breakTitle.style.textOverflow = "ellipsis";
+  breakTitle.textContent = "Break";
+
+  const breakStatus = document.createElement("div");
+  breakStatus.id = "breakStatus";
+  breakStatus.style.minHeight = "20px";
+  breakStatus.style.display = "flex";
+  breakStatus.style.flexDirection = "column";
+  breakStatus.style.justifyContent = "center";
+  breakStatus.style.fontSize = "10px";
+  breakStatus.style.lineHeight = "1.2";
+  breakStatus.style.whiteSpace = "nowrap";
+  breakStatus.style.overflow = "hidden";
+  breakStatus.style.textOverflow = "ellipsis";
+  breakStatus.innerHTML = "Ready";
+
+  const forceEndBreakBtn = document.createElement("button");
+  forceEndBreakBtn.id = "forceEndBreakBtn";
+  forceEndBreakBtn.textContent = "End";
+  forceEndBreakBtn.style.width = "100%";
+  forceEndBreakBtn.style.padding = "3px 0";
+  forceEndBreakBtn.style.marginTop = "4px";
+  forceEndBreakBtn.style.backgroundColor = "#ff9800";
+  forceEndBreakBtn.style.color = "white";
+  forceEndBreakBtn.style.border = "none";
+  forceEndBreakBtn.style.borderRadius = "4px";
+  forceEndBreakBtn.style.cursor = "pointer";
+  forceEndBreakBtn.style.fontSize = "10px";
+  forceEndBreakBtn.style.fontWeight = "bold";
+  forceEndBreakBtn.style.display = "none";
+  forceEndBreakBtn.style.whiteSpace = "nowrap";
+  forceEndBreakBtn.style.overflow = "hidden";
+  forceEndBreakBtn.style.textOverflow = "ellipsis";
+
+  breakControls.appendChild(breakTitle);
+  breakControls.appendChild(breakStatus);
+  breakControls.appendChild(forceEndBreakBtn);
+  container.appendChild(breakControls);
 
   // Force End Break Button Handler
   forceEndBreakBtn.addEventListener('click', () => {
     console.log('🚀 Force End Break...');
     
-    // Update UI immediately
-    breakStatus.innerHTML = '🔄 Ending Break...';
+    breakStatus.innerHTML = 'Ending...';
     breakStatus.style.color = '#ff9800';
     
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -207,194 +214,198 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log('✅ Force End Break Response:', response);
           
           if (response?.success) {
-            // Update UI
-            breakStatus.innerHTML = '✅ Break Ended Successfully';
+            breakStatus.innerHTML = '✅ Ended';
             breakStatus.style.color = '#4CAF50';
             forceEndBreakBtn.style.display = 'none';
             
             setTimeout(() => {
-              breakStatus.innerHTML = '✅ Ready';
+              breakStatus.innerHTML = 'Ready';
               breakStatus.style.color = '#4CAF50';
             }, 2000);
             
-            // Update raid status display
             updateRaidStatusDisplay({
               type: 'breakStatusUpdate',
               isOnBreak: false,
               raidsSinceLastBreak: 0
             });
           } else {
-            breakStatus.innerHTML = '❌ Failed to End Break';
+            breakStatus.innerHTML = '❌ Failed';
             breakStatus.style.color = '#f44336';
           }
         }).catch(err => {
           console.log('❌ Force End Break Error:', err);
-          breakStatus.innerHTML = '❌ Error: Content Script Not Ready';
+          breakStatus.innerHTML = '❌ Error';
           breakStatus.style.color = '#f44336';
           
-          // Reset after 2 seconds
           setTimeout(() => {
-            breakStatus.innerHTML = '✅ Ready';
+            breakStatus.innerHTML = 'Ready';
             breakStatus.style.color = '#4CAF50';
           }, 2000);
         });
       } else {
-        breakStatus.innerHTML = '❌ No Active Tab Found';
+        breakStatus.innerHTML = '❌ No Tab';
         breakStatus.style.color = '#f44336';
       }
     });
   });
 
-  // Function to Update Raid Status Display
-  function updateRaidStatusDisplay(message = null) {
-    const statusDiv = document.getElementById("raidStatus");
-    if (!statusDiv) return;
-    
-    const autoRaidEnabled = elements.autoRaid?.checked || false;
-    const autoCombatEnabled = elements.autoCombat?.checked || false;
-    
-    // If Message Provided, Use It to Update Status
-    if (message && message.type === 'raidStatusUpdate') {
-      if (message.active) {
-        let features = [];
-        if (autoRaidEnabled) features.push('Start Raid');
-        if (autoCombatEnabled) features.push('Full Auto');
-
-        // Break Status
-        let breakStatus = '';
-        if (message.isOnBreak) {
-          const timeLeft = message.timeLeft || 0;
-          const minutes = Math.floor(timeLeft / 60000);
-          const seconds = Math.floor((timeLeft % 60000) / 1000);
-          breakStatus = `<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ffc107;">
-            ⏸️ <strong>On Break</strong> - ${minutes > 0 ? minutes + 'm ' : ''}${seconds}s remaining
-          </div>`;
-        } else if (enableBreaks && message.raidsSinceLastBreak !== undefined) {
-          breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
-            ✅ Breaks Enabled - ${message.raidsSinceLastBreak} Raids since Last Break
-          </div>`;
-        }
-        
-        statusDiv.innerHTML = `
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 10px; height: 10px; background-color: #4CAF50; border-radius: 50%; margin-right: 8px; animation: pulse 1.5s infinite;"></div>
-            <strong style="color: #2e7d32;">ACTIVE: ${features.join(' + ')}</strong>
-          </div>
-          <div style="margin-left: 18px; font-size: 11px; line-height: 1.4;">
-            <div>📝 ${message.lastAction || 'Monitoring...'}</div>
-            ${message.totalClicks ? `<div>👆 Clicks: ${message.totalClicks}</div>` : ''}
-            ${message.timestamp ? `<div style="color: #777; font-size: 10px; margin-top: 4px;">${message.timestamp}</div>` : ''}
-          </div>
-          <style>
-            @keyframes pulse {
-              0% { opacity: 1; }
-              50% { opacity: 0.5; }
-              100% { opacity: 1; }
-            }
-          </style>
-        `;
-        statusDiv.style.backgroundColor = "#e8f5e8";
-        statusDiv.style.borderLeftColor = "#4CAF50";
-      } else {
-        statusDiv.innerHTML = `
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 10px; height: 10px; background-color: #9e9e9e; border-radius: 50%; margin-right: 8px;"></div>
-            <strong style="color: #666;">INACTIVE</strong>
-          </div>
-          <div style="margin-left: 18px; font-size: 11px; color: #777;">
-            Enable Automation Features to Start
-          </div>
-        `;
-        statusDiv.style.backgroundColor = "#f5f5f5";
-        statusDiv.style.borderLeftColor = "#ddd";
-      }
-      return;
-    }
-    
-    // No Message, Just Update Based on Current Settings
-    if (autoRaidEnabled || autoCombatEnabled) {
-      let features = [];
-      if (autoRaidEnabled) features.push('Start Raid');
-      if (autoCombatEnabled) features.push('Full Auto');
-
-      // Break Status
-      let breakStatus = '';
+  // Update Break Controls State
+  function updateBreakControls(breakData) {
+      if (!breakData) return;
+      
+      console.log('🔧 Updating Break Controls With:', breakData);
+      
+      // Only show break controls if breaks are enabled
+      const enableBreaks = elements.enableBreaks?.checked || false;
+      
       if (enableBreaks) {
-        breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
-          ✅ Breaks Enabled
-        </div>`;
+          breakControls.style.display = 'block';
+          
+          if (breakData.isOnBreak) {
+              forceEndBreakBtn.style.display = 'block';
+              breakControls.style.borderLeftColor = '#ff9800';
+              breakTitle.style.color = '#ff9800';
+              breakTitle.textContent = 'Break (active)';
+              
+              if (breakData.timeLeft && breakData.timeLeft > 0) {
+                  const minutes = Math.floor(breakData.timeLeft / 60000);
+                  const seconds = Math.floor((breakData.timeLeft % 60000) / 1000);
+                  forceEndBreakBtn.textContent = `End`;
+                  if (minutes > 0) {
+                      breakStatus.innerHTML = `⏸️ ${minutes}m ${seconds}s`;
+                  } else {
+                      breakStatus.innerHTML = `⏸️ ${seconds}s`;
+                  }
+                  breakStatus.style.color = '#ff9800';
+              } else {
+                  forceEndBreakBtn.textContent = 'End';
+                  breakStatus.innerHTML = '⏸️ Active';
+                  breakStatus.style.color = '#ff9800';
+              }
+          } else {
+              forceEndBreakBtn.style.display = 'none';
+              breakControls.style.borderLeftColor = '#4CAF50';
+              breakTitle.style.color = '#2e7d32';
+              breakTitle.textContent = 'Break';
+              
+              if (breakData.raidsSinceLastBreak !== undefined) {
+                  breakStatus.innerHTML = `✅ ${breakData.raidsSinceLastBreak} raids`;
+                  breakStatus.style.color = '#4CAF50';
+              } else {
+                  breakStatus.innerHTML = '✅ Ready';
+                  breakStatus.style.color = '#4CAF50';
+              }
+          }
+      } else {
+          // Hide break controls if breaks are not enabled
+          breakControls.style.display = 'none';
       }
+  }
 
-      let statusMessage = 'Monitoring for buttons...'; // Default Message
-      if (autoRaidEnabled && !autoCombatEnabled) {
-        statusMessage = 'Waiting to Start Raid.';
-      } else if (!autoRaidEnabled && autoCombatEnabled) {
-        statusMessage = 'Waiting for Battle Screen.';
-      } else if (autoRaidEnabled && autoCombatEnabled) {
-        statusMessage = 'Waiting to Start Raid and Full Auto.';
+  // Update Raid Status Display
+  function updateRaidStatusDisplay(message = null) {
+      if (!statusDiv) return;
+      
+      const autoRaidEnabled = elements.autoRaid?.checked || false;
+      const autoCombatEnabled = elements.autoCombat?.checked || false;
+      
+      if (message && message.type === 'raidStatusUpdate') {
+          if (message.active) {
+              let features = [];
+              if (autoRaidEnabled) features.push('Raid');
+              if (autoCombatEnabled) features.push('Auto');
+
+              statusDiv.innerHTML = `
+                  <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+                      <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
+                      <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${features.join('+')}</strong>
+                  </div>
+                  <div style="font-size: 9px; line-height: 1.2; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      ${message.lastAction?.substring(0, 20) || 'Monitoring...'}
+                  </div>
+                  <style>
+                      @keyframes pulse {
+                          0% { opacity: 1; }
+                          50% { opacity: 0.5; }
+                          100% { opacity: 1; }
+                      }
+                  </style>
+              `;
+              statusDiv.style.backgroundColor = "#e8f5e8";
+              statusDiv.style.borderLeftColor = "#4CAF50";
+          } else {
+              statusDiv.innerHTML = `
+                  <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+                      <div style="width: 6px; height: 6px; background-color: #9e9e9e; border-radius: 50%; margin-right: 4px; flex-shrink: 0;"></div>
+                      <strong style="color: #666; font-size: 10px;">INACTIVE</strong>
+                  </div>
+                  <div style="font-size: 9px; color: #777; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      Enable features
+                  </div>
+              `;
+              statusDiv.style.backgroundColor = "#f5f5f5";
+              statusDiv.style.borderLeftColor = "#ddd";
+          }
+          return;
       }
       
-      statusDiv.innerHTML = `
-        <div style="display: flex; align-items: center; margin-bottom: 8px;">
-          <div style="width: 10px; height: 10px; background-color: #4CAF50; border-radius: 50%; margin-right: 8px; animation: pulse 1.5s infinite;"></div>
-          <strong style="color: #2e7d32;">ACTIVE: ${features.join(' + ')}</strong>
-        </div>
-        <div style="margin-left: 18px; font-size: 11px; color: #666;">
-          ${statusMessage}
-        </div>
-      `;
-      statusDiv.style.backgroundColor = "#e8f5e8";
-      statusDiv.style.borderLeftColor = "#4CAF50";
-    } else {
-      // Inactive with break status
-      let breakStatus = '';
-      if (enableBreaks) {
-        breakStatus = `<div style="margin-top: 8px; color: #666; font-size: 11px;">
-          ✅ Breaks Enabled - Will Activate with Automation
-        </div>`;
-      }
+      if (autoRaidEnabled || autoCombatEnabled) {
+          let features = [];
+          if (autoRaidEnabled) features.push('Raid');
+          if (autoCombatEnabled) features.push('Auto');
 
-      statusDiv.innerHTML = `
-        <div style="color: #666; font-style: italic;">
-          Enable "Start Raid" or "Full Auto" to begin automation
-        </div>
-      `;
-      statusDiv.style.backgroundColor = "#f5f5f5";
-      statusDiv.style.borderLeftColor = "#ddd";
-    }
+          let statusMessage = 'Ready';
+          if (autoRaidEnabled && !autoCombatEnabled) {
+              statusMessage = 'Waiting for raid';
+          } else if (!autoRaidEnabled && autoCombatEnabled) {
+              statusMessage = 'Waiting for battle';
+          }
+          
+          statusDiv.innerHTML = `
+              <div style="display: flex; align-items: center; margin-bottom: 2px; width: 100%;">
+                  <div style="width: 6px; height: 6px; background-color: #4CAF50; border-radius: 50%; margin-right: 4px; animation: pulse 1.5s infinite; flex-shrink: 0;"></div>
+                  <strong style="color: #2e7d32; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${features.join('+')}</strong>
+              </div>
+              <div style="font-size: 9px; color: #666; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  ${statusMessage}
+              </div>
+          `;
+          statusDiv.style.backgroundColor = "#e8f5e8";
+          statusDiv.style.borderLeftColor = "#4CAF50";
+      } else {
+          statusDiv.innerHTML = `
+              <div style="color: #666; font-style: italic; font-size: 10px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  Enable features
+              </div>
+          `;
+          statusDiv.style.backgroundColor = "#f5f5f5";
+          statusDiv.style.borderLeftColor = "#ddd";
+      }
   }
 
   // Handle Popup Detected Message
   function handlePopupDetected(message) {
-    const statusDiv = document.getElementById("raidStatus");
     if (!statusDiv) return;
     
-    const popupText = message.popupInfo?.text || 'Unknown popup';
-    
     statusDiv.innerHTML = `
-      <div style="display: flex; align-items: center; margin-bottom: 8px;">
-        <div style="width: 10px; height: 10px; background-color: #FF5722; border-radius: 50%; margin-right: 8px;"></div>
-        <strong style="color: #D32F2F;">PAUSED: Popup Detected</strong>
+      <div style="display: flex; align-items: center; margin-bottom: 4px;">
+        <div style="width: 8px; height: 8px; background-color: #FF5722; border-radius: 50%; margin-right: 6px;"></div>
+        <strong style="color: #D32F2F; font-size: 11px;">PAUSED</strong>
       </div>
-      <div style="margin-left: 18px; font-size: 11px; line-height: 1.4;">
-        <div>⚠️ ${popupText}</div>
-        <div style="color: #FF9800; margin-top: 4px;">
-          <small>Automation paused. Close popup and re-enable features.</small>
-        </div>
-        ${message.timestamp ? `<div style="color: #777; font-size: 10px; margin-top: 4px;">${message.timestamp}</div>` : ''}
+      <div style="font-size: 10px; line-height: 1.2;">
+        <div>⚠️ Popup detected</div>
+        <div style="color: #FF9800;">Close to resume</div>
       </div>
     `;
     statusDiv.style.backgroundColor = "#FFEBEE";
     statusDiv.style.borderLeftColor = "#FF5722";
     
-    // Disable Automation Checkboxes
     const autoRaidCheckbox = document.querySelector('#autoRaid');
     const autoCombatCheckbox = document.querySelector('#autoCombat');
     
     if (autoRaidCheckbox) autoRaidCheckbox.checked = false;
     if (autoCombatCheckbox) autoCombatCheckbox.checked = false;
     
-    // Save Disabled State to Storage
     if (elements.autoRaid) {
       chrome.storage.sync.set({ autoRaid: false });
     }
@@ -405,8 +416,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load Settings from Storage
   chrome.storage.sync.get(storageDefaults, (data) => {
-    
-    // Debug Log
     console.log('🔄 Loaded Settings from Storage:', data);
 
     for (let key of allKeys) {
@@ -414,17 +423,14 @@ document.addEventListener('DOMContentLoaded', () => {
         elements[key].checked = !!data[key];
       }
     }
-    // Initial
     updateRaidStatusDisplay();
     
-    // Request Current Status from Content Script
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(tabs[0].id, { 
           type: 'getStatus' 
         }, (response) => {
           if (chrome.runtime.lastError) {
-            // Content Script Not Available
             console.log('Content script not available:', chrome.runtime.lastError.message);
           } else if (response) {
             updateRaidStatusDisplay(response);
@@ -439,19 +445,15 @@ document.addEventListener('DOMContentLoaded', () => {
   for (let key in elements) {
     elements[key].onchange = e => {
       const isChecked = e.target.checked;
-
-      // Debug Log
       console.log(`🔄 Saving Setting: ${key}=${isChecked}`);
       
-      // Save to Storage
       chrome.storage.sync.set({ [key]: isChecked }, () => {
         if (chrome.runtime.lastError) {
           console.error('Error saving to storage:', chrome.runtime.lastError);
         }
       });
       
-      // Notify Content Script of Setting Change
-      if (key === 'autoRaid' || key === 'autoCombat') {
+      if (key === 'autoRaid' || key === 'autoCombat' || key === 'enableBreaks') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]?.id) {
             chrome.tabs.sendMessage(tabs[0].id, {
@@ -466,12 +468,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       
-      // Update Status Display
       updateRaidStatusDisplay();
     };
   }
 
-  // Listen for Storage Changes to Update UI
+  // Listen for Storage Changes
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync') {
       for (let key in changes) {
@@ -479,7 +480,6 @@ document.addEventListener('DOMContentLoaded', () => {
           elements[key].checked = !!changes[key].newValue;
         }
       }
-      // Update Status Display
       updateRaidStatusDisplay();
     }
   });
@@ -535,16 +535,14 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDrops(data.gbfInventory || {});
   });
 
-  // Listen for Inventory Updates
+  // Listen for Messages
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "inventoryUpdated") {
       renderDrops(msg.inventory);
     }
-    // Raid Status Update
     else if (msg.type === "raidStatusUpdate") {
       updateRaidStatusDisplay(msg);
     }
-    // Popup Detected
     else if (msg.type === "popupDetected") {
       handlePopupDetected(msg);
     }

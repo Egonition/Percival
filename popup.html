@@ -12,6 +12,28 @@
     .tab-content ul { padding-left: 20px; margin: 5px 0; }
     .tab-content li { margin: 2px 0; }
     .tab-content li.empty { opacity: 0.5; font-style: italic; }
+    
+    /* Settings grid layout */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+      padding: 5px 0;
+    }
+    
+    .setting-item {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+    }
+    
+    .setting-item input[type="checkbox"] {
+      margin-right: 6px;
+    }
+    
+    .full-width {
+      grid-column: span 2;
+    }
   </style>
 </head>
 <body>
@@ -28,7 +50,7 @@
 
   <!-- Settings -->
   <div id="settingsContent" class="tab-content">
-    <div id="options"></div>
+    <div id="options" class="settings-grid"></div>
 
     <div id="breakControls" style="
       margin-top: 20px;
