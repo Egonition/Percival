@@ -6,6 +6,44 @@ const skills = {
   "8001": "Tag team"
 };
 
+// Listen for Keyboard Commands
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-play-pause') {
+    console.log('🎮 Toggle Play/Pause Hotkey Pressed');
+    
+    // Get the current active tab
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        // Get current play state
+        chrome.storage.local.get(['isPlaying'], (data) => {
+          const newState = !data.isPlaying;
+          
+          // Send Toggle Command to Content Script
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'toggleAutomation',
+            action: newState ? 'play' : 'pause'
+          }).then(response => {
+            console.log('✅ Toggle Response:', response);
+            
+            // Update Stored State
+            chrome.storage.local.set({ isPlaying: newState });
+            
+            // Notify Popup of State Change
+            chrome.runtime.sendMessage({
+              type: 'playStateChanged',
+              isPlaying: newState
+            }).catch(() => {
+              // Popup Might Not Be Open, That's Fine
+            });
+          }).catch(err => {
+            console.log('Content script not ready:', err);
+          });
+        });
+      }
+    });
+  }
+});
+
 // Listen for Storage Changes
 chrome.storage.onChanged.addListener(function (changes, namespace) {
   for (let key in changes) {

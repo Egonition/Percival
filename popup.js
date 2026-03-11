@@ -533,6 +533,19 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  // Listen for Play State Changes from Background Script
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'playStateChanged') {
+      isPlaying = msg.isPlaying;
+      updatePlayPauseButton();
+      updateRaidStatusDisplay({ 
+        type: 'raidStatusUpdate', 
+        active: isPlaying,
+        lastAction: isPlaying ? 'Toggled via hotkey' : 'Paused via hotkey'
+      });
+    }
+  });
+
   // Listen for Storage Changes
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync') {

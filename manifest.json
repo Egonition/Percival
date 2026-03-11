@@ -1,6 +1,6 @@
 {
   "name": "Percival",
-  "version": "1.2",
+  "version": "1.2.1",
   "description": "GBF Script",
   "permissions": [
     "scripting",
@@ -52,19 +52,12 @@
   "options_page": "popup.html",
   
   "commands": {
-    "toggle-aracarum-mode": {
+    "toggle-play-pause": {
       "suggested_key": {
-        "default": "Ctrl+1",
-        "mac": "Command+1"
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+Space"
       },
-      "description": "Toggle Arcarum Mode"
-    },
-    "deactivate-all": {
-      "suggested_key": {
-        "default": "Ctrl+0",
-        "mac": "Command+0"
-      },
-      "description": "Clear All Options"
+      "description": "Toggle Play/Pause Automation"
     }
   },
   "manifest_version": 3
