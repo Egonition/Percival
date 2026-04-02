@@ -2,7 +2,8 @@ class RaidAutomator {
   constructor() {
     this.settings = {
       autoRaid: false,
-      autoCombat: false
+      autoCombat: false,
+      quickAttack: false,
     };
     
     this.state = {
@@ -36,6 +37,7 @@ class RaidAutomator {
     
     this.cooldowns = {
       ok: 0,
+      attack: 0,
       auto: 0
     };
     
@@ -115,9 +117,10 @@ class RaidAutomator {
   // Load Settings from Storage
   async loadSettings() {
     return new Promise(resolve => {
-      chrome.storage.sync.get(['autoRaid', 'autoCombat', 'enableBreaks'], data => {
+      chrome.storage.sync.get(['autoRaid', 'autoCombat', 'quickAttack', 'enableBreaks'], data => {
         this.settings.autoRaid = data.autoRaid || false;
         this.settings.autoCombat = data.autoCombat || false;
+        this.settings.quickAttack = data.quickAttack || false;
         this.settings.enableBreaks = data.enableBreaks || false;
         resolve();
       });
@@ -590,6 +593,7 @@ class RaidAutomator {
   updateSettings(msg) {
     this.settings.autoRaid = msg.autoRaid ?? this.settings.autoRaid;
     this.settings.autoCombat = msg.autoCombat ?? this.settings.autoCombat;
+    this.settings.quickAttack = msg.quickAttack ?? this.settings.quickAttack;
 
     // Update Break Manager Settings
     if (this.breakManager && msg.enableBreaks !== undefined) {
@@ -683,7 +687,24 @@ class RaidAutomator {
         this.clickRaidStart(okButton);
       }
     }
-    
+
+    // Check for Attack button if quickAttack is enabled AND in battle screen
+    if (this.settings.quickAttack && this.canClick('attack') && 
+        this.state.currentScreen === 'battle' &&
+        this.state.hasSeenAutoButton &&
+        !this.state.autoClickAttempted &&
+        !this.state.autoCombatActive) {
+      const attackButton = this.findAttackButton();
+      if (attackButton) {
+        if (this.hasBlockingPopup().found) {
+          this.handlePopupDetected();
+          return;
+        }
+        this.clickQuickAttack(attackButton);
+        return;
+      }
+    }
+
     // Check for Auto button if autoCombat is enabled AND in battle screen
     if (this.settings.autoCombat && this.canClick('auto') && 
         this.state.currentScreen === 'battle' &&
@@ -859,6 +880,44 @@ class RaidAutomator {
       // console.log('⚠️ Auto combat has been marked as enabled.');
     }
   }
+
+  async clickQuickAttack(button) {
+    // Check for Popup
+    if (this.hasBlockingPopup().found) {
+      this.handlePopupDetected();
+      return;
+    }
+    
+    // Mark as Attempted
+    this.state.autoClickAttempted = true;
+    this.cooldowns.auto = Date.now();
+    
+    // Add Human-Like Delay before Action
+    if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
+      const extraDelay = this.getRandomDelay(
+        this.timing.HUMAN_DELAY_MIN,
+        this.timing.HUMAN_DELAY_MAX
+      );
+      await this.sleep(extraDelay);
+      
+      // Check for Popup during Delay
+      if (this.hasBlockingPopup().found) {
+        this.handlePopupDetected();
+        return;
+      }
+    }
+    
+    // Perform Click
+    await this.simulateHumanClick(button, 'Quick Attack');
+    
+    this.state.autoCombatActive = true;
+    this.updateStatus('Quick Attack Used - Waiting for Completion');
+    
+    setTimeout(() => {
+      this.state.autoCombatActive = false;
+      this.state.autoClickAttempted = false;
+    }, 5000);
+  }
   
   findOkButton() {
     // Check both button types
@@ -870,6 +929,11 @@ class RaidAutomator {
     if (button2 && this.isVisible(button2)) return button2;
     
     return null;
+  }
+
+  findAttackButton() {
+    const button = document.querySelector('.btn-attack-start.display-on');
+    return button && this.isVisible(button) ? button : null;
   }
   
   findAutoButton() {

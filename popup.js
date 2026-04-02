@@ -112,11 +112,12 @@ document.addEventListener('DOMContentLoaded', () => {
     redirectFarm: "Redirect to Farm",
     autoRaid: "Start Raid",
     autoCombat: "Full Auto",
+    quickAttack: "Quick Attack",
     enableBreaks: "Enable Breaks"
   };
 
   const categories = {
-    "Automation": ["autoRaid", "autoCombat", "enableBreaks"],
+    "Automation": ["enableBreaks", "autoRaid", "autoCombat", "quickAttack" ],
     "Navigation": ["redirectFarm"],
     "Attack Settings": ["goBackOnAttack", "reloadAttack"],
     "Skill Settings": ["reloadSkill"],
