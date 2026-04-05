@@ -3,7 +3,7 @@ importScripts("constants.js");
 
 const skills = {
   "6199": "Conjunction",
-  "8001": "Tag team"
+  "8000": "Tag team"
 };
 
 // Listen for Keyboard Commands
@@ -140,6 +140,7 @@ chrome.webRequest.onBeforeRequest.addListener(
   {
     urls: [
       "*://game.granbluefantasy.jp/rest/*/ability_result.json*",
+      "*://game.granbluefantasy.jp/rest/*/*/ability_result.json*"
     ],
   },
   ["requestBody"]
