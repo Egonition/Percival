@@ -1,351 +1,266 @@
 'use strict';
+
 class BreakManager {
   constructor(settings = {}) {
     this.settings = {
-      enableBreaks: settings.enableBreaks || false,
-      breakInterval: settings.breakInterval || 10,  // Raids Between Breaks
-      breakDuration: settings.breakDuration || 5,   // Minutes
+      enableBreaks:    settings.enableBreaks    || false,
+      breakInterval:   settings.breakInterval   || 10,   // Raids Between Breaks
+      breakDuration:   settings.breakDuration   || 5,    // Minutes
       randomizeBreaks: settings.randomizeBreaks || false
     };
-    
+
     this.state = {
-      isOnBreak: false,
-      breakStartTime: 0,
-      breakEndTime: 0,
-      raidsSinceLastBreak: 0,
-      lastBreakTime: 0,
-      totalBreaks: 0
+      isOnBreak:            false,
+      breakStartTime:       0,
+      breakEndTime:         0,
+      raidsSinceLastBreak:  0,
+      lastBreakTime:        0,
+      totalBreaks:          0
     };
-    
+
     this.timing = {
       // Break Probability Settings
-      BREAK_CHANCE_PER_RAID: 0.18,
-      MIN_RAIDS_BETWEEN_BREAKS: 3,
-      MAX_RAIDS_BETWEEN_BREAKS: 12,
-      
-      // Break Duration Settings
-      SHORT_BREAK_MIN: 30000,     // 30 seconds
-      SHORT_BREAK_MAX: 120000,    // 2 minutes
-      MEDIUM_BREAK_MIN: 120000,   // 2 minutes
-      MEDIUM_BREAK_MAX: 300000,   // 5 minutes
-      LONG_BREAK_MIN: 600000,     // 10 minutes
-      LONG_BREAK_MAX: 1200000,    // 20 minutes
-      
+      BREAK_CHANCE_PER_RAID:      0.18,
+      MIN_RAIDS_BETWEEN_BREAKS:   3,
+      MAX_RAIDS_BETWEEN_BREAKS:   12,
+
+      // Break Duration Settings (ms)
+      SHORT_BREAK_MIN:   30000,    // 30 seconds
+      SHORT_BREAK_MAX:   120000,   // 2 minutes
+      MEDIUM_BREAK_MIN:  120000,   // 2 minutes
+      MEDIUM_BREAK_MAX:  300000,   // 5 minutes
+      LONG_BREAK_MIN:    600000,   // 10 minutes
+      LONG_BREAK_MAX:    1200000,  // 20 minutes
+
       // Break Type Probabilities
-      SHORT_BREAK_CHANCE: 0.7,    // 70% short breaks
-      MEDIUM_BREAK_CHANCE: 0.25,  // 25% medium breaks
-      LONG_BREAK_CHANCE: 0.05     // 5% long breaks
+      SHORT_BREAK_CHANCE:  0.70,   // 70%
+      MEDIUM_BREAK_CHANCE: 0.25,   // 25%
+      LONG_BREAK_CHANCE:   0.05    // 5%
     };
-    
+
     this.breakTimer = null;
     this.onBreakEndCallback = null;
   }
-  
-  // Update settings
+
+  // Update Settings
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
-    
     if (!this.settings.enableBreaks && this.state.isOnBreak) {
       this.endBreak();
     }
   }
 
+  // Save State
   saveState() {
     return {
       settings: this.settings,
-      state: {
-        isOnBreak: this.state.isOnBreak,
-        breakStartTime: this.state.breakStartTime,
-        breakEndTime: this.state.breakEndTime,
-        raidsSinceLastBreak: this.state.raidsSinceLastBreak,
-        lastBreakTime: this.state.lastBreakTime,
-        totalBreaks: this.state.totalBreaks
-      }
+      state: { ...this.state }
     };
   }
 
+  // Load State
   loadState(savedState) {
-    if (savedState) {
-      // Debug Log
-      // console.log('📂 Break Manager: Loading Saved State');
-      // console.log('    - Saved State: ', savedState);
-      // console.log('    - Current Raids Since Last Break: ', this.state.raidsSinceLastBreak);
+    if (!savedState) return;
 
-      // Preserve Current Enable Breaks Setting
-      const currentEnableBreaks = this.settings.enableBreaks;
+    const currentEnableBreaks = this.settings.enableBreaks;
 
-      if (savedState.settings) {
-        this.settings = { ...this.settings, ...savedState.settings };
-      }
-
-      // Restore State
-      if (savedState.state) {
-        this.state = {
-          ...this.state,
-          ...savedState.state
-        };
-      }
-
-      // Restore Enable Breaks Setting
-      this.settings.enableBreaks = currentEnableBreaks;
-
-      // Debug Log
-      // console.log('   - Loaded Raids Since Last Break: ', this.state.raidsSinceLastBreak);
+    if (savedState.settings) {
+      this.settings = { ...this.settings, ...savedState.settings };
     }
+
+    if (savedState.state) {
+      this.state = { ...this.state, ...savedState.state };
+    }
+
+    // Preserve Current Enable Breaks Setting
+    this.settings.enableBreaks = currentEnableBreaks;
   }
-  
-  // Called after each raid completes
-  onRaidComplete() {
-    if (!this.settings.enableBreaks) {
-      // Debug Log
-      console.log('❌ Breaks are Disabled in Settings.');
-      return false;
-    }
 
-    if (this.state.isOnBreak) {
-      // Debug Log
-      console.log('⏸️ Currently on a Break.');
-      return false;
-    }
-    
-    const oldValue = this.state.raidsSinceLastBreak;
+  // Called After Each Raid Completes
+  onRaidComplete() {
+    if (!this.settings.enableBreaks || this.state.isOnBreak) return false;
+
     this.state.raidsSinceLastBreak++;
 
-    // Debug Log
-    // console.log(`   - Incremented: ${oldValue} → ${this.state.raidsSinceLastBreak}`);
-
-    const shouldBreak = this.shouldTakeBreak();
-
-    // Debug Log
-    // console.log('   - Should Take Break:', shouldBreak);
-    
-    // Check if it's time for a break
-    if (shouldBreak) {
-      // Debug Log
-      // console.log('✅ Starting Break Now.');
-
-      const breakInfo = this.startBreak();
-
-      // Debug Log
-      // console.log('   - Break Info:', breakInfo);
-
+    if (this.shouldTakeBreak()) {
+      this.startBreak();
       return true;
     }
-    
-    console.log('❌ Not Taking a Break This Time.');
+
     return false;
   }
-  
+
+  // Determine if a Break Should be Taken
   shouldTakeBreak() {
-    if (!this.settings.enableBreaks) {
-      // Debug Log
-      // console.log('❌ Condition 1 Failed: Breaks are Disabled in Settings.');
-      return false;
-    }
+    if (!this.settings.enableBreaks || this.state.isOnBreak) return false;
 
-    if (this.state.isOnBreak) {
-      // Debug Log
-      // console.log('❌ Condition 2 Failed: Currently on a Break.');
-      return false;
-    }
-
-    // Ensure some time has passed since last break
+    // At Least 1 Minute Since Last Break
     const timeSinceLastBreak = Date.now() - this.state.lastBreakTime;
-    console.log('    - Time since Last Break:', timeSinceLastBreak / 1000, 'seconds');
+    if (timeSinceLastBreak < 60000) return false;
 
-    if (timeSinceLastBreak < 60000) { // at least 1 minute
-      // console.log('❌ Condition 3 Failed: Less Than 1 Minute Since Last Break.');
-      return false;
-    }
-    
-    // Minimum raids between breaks
-    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) {
-      // console.log('❌ Condition 4 Failed: Minimum Raids Between Breaks Not Met.');
-      return false;
-    }
-    
-    // Maximum raids between breaks
-    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) {
-      // console.log('✅ Condition 5 Met: Maximum Raids Between Breaks Reached.');
-      return true;
-    }
-    
-    // Random chance based on raids completed
-    const breakChance = this.timing.BREAK_CHANCE_PER_RAID * 
-                      (this.state.raidsSinceLastBreak / this.timing.MIN_RAIDS_BETWEEN_BREAKS);
-    
+    // Minimum Raids Between Breaks
+    if (this.state.raidsSinceLastBreak < this.timing.MIN_RAIDS_BETWEEN_BREAKS) return false;
+
+    // Maximum Raids Between Breaks - Force Break
+    if (this.state.raidsSinceLastBreak >= this.timing.MAX_RAIDS_BETWEEN_BREAKS) return true;
+
+    // Random Chance Based on Raids Completed
+    const breakChance = this.timing.BREAK_CHANCE_PER_RAID *
+      (this.state.raidsSinceLastBreak / this.timing.MIN_RAIDS_BETWEEN_BREAKS);
+
     return Math.random() < breakChance;
   }
 
-  sendStatusUpdate() {
-    if (this.state.isOnBreak) {
-      const timeLeft = Math.max(0, this.state.breakEndTime - Date.now());
-      chrome.runtime.sendMessage({
-        type: 'breakStatusUpdate',
-        isOnBreak: true,
-        timeLeft: timeLeft,
-        raidsSinceLastBreak: this.state.raidsSinceLastBreak
-      });
-    }
-  }
-  
+  // Start Break
   async startBreak() {
     if (!this.settings.enableBreaks) return;
-    
-    // Determine break type
+
     const breakType = this.determineBreakType();
-    let breakTime = this.getBreakDuration(breakType);
-    
-    // Apply randomization if enabled
+    let breakDuration = this.getBreakDuration(breakType);
+
+    // Apply Randomization if Enabled
     if (this.settings.randomizeBreaks) {
-      const randomFactor = 0.8 + Math.random() * 0.4; // ±20%
-      breakTime = Math.floor(breakTime * randomFactor);
+      breakDuration = Math.floor(breakDuration * (0.8 + Math.random() * 0.4));
     }
-    
-    // Set break state
-    this.state.isOnBreak = true;
-    this.state.breakStartTime = Date.now();
-    this.state.breakEndTime = Date.now() + breakTime;
+
+    this.state.isOnBreak       = true;
+    this.state.breakStartTime  = Date.now();
+    this.state.breakEndTime    = Date.now() + breakDuration;
+    this.state.lastBreakTime   = Date.now();
     this.state.totalBreaks++;
-    this.state.lastBreakTime = Date.now();
-    
-    const breakMinutes = Math.round(breakTime / 60000);
-    const breakSeconds = Math.round((breakTime % 60000) / 1000);
-    
-    console.log(`⏸️ Taking ${breakType} Break After ${this.state.raidsSinceLastBreak} Raids For ${breakMinutes > 0 ? breakMinutes + 'm ' : ''}${breakSeconds}s`);
-    
-    // Start break timer
-    this.breakTimer = setTimeout(() => {
-      this.endBreak();
-    }, breakTime);
-    
+
+    const mins = Math.floor(breakDuration / 60000);
+    const secs = Math.round((breakDuration % 60000) / 1000);
+    console.log(`⏸️ Taking ${breakType} Break After ${this.state.raidsSinceLastBreak} Raids For ${mins > 0 ? mins + 'm ' : ''}${secs}s`);
+
+    this.breakTimer = setTimeout(() => this.endBreak(), breakDuration);
+
     return {
-      type: breakType,
-      duration: breakTime,
-      endTime: this.state.breakEndTime
+      type:     breakType,
+      duration: breakDuration,
+      endTime:  this.state.breakEndTime
     };
   }
-  
+
+  // End Break
   endBreak() {
     if (!this.state.isOnBreak) return;
-    
-    this.state.isOnBreak = false;
+
+    this.state.isOnBreak           = false;
     this.state.raidsSinceLastBreak = 0;
-    
+
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
     }
-    
-    console.log(`✅ Break Ended. Resuming Raids.`);
 
-    // Save State when Break Ends
+    console.log('✅ Break Ended - Resuming Raids.');
     this.saveState();
 
-    // Call callback if set
     if (this.onBreakEndCallback) {
       this.onBreakEndCallback();
     }
   }
-  
+
+  // Force End Break
+  forceEndBreak() {
+    if (!this.state.isOnBreak) {
+      console.warn('⚠️ No Active Break to End.');
+      return false;
+    }
+
+    this.state.isOnBreak           = false;
+    this.state.raidsSinceLastBreak = 0;
+
+    if (this.breakTimer) {
+      clearTimeout(this.breakTimer);
+      this.breakTimer = null;
+    }
+
+    console.log('✅ Break Force Ended.');
+    this.saveState();
+
+    chrome.runtime.sendMessage({
+      type: 'breakStatusUpdate',
+      isOnBreak: false,
+      raidsSinceLastBreak: 0
+    });
+
+    if (this.onBreakEndCallback) {
+      this.onBreakEndCallback();
+    }
+
+    return true;
+  }
+
+  // Determine Break Type
   determineBreakType() {
     const rand = Math.random();
     if (rand < this.timing.SHORT_BREAK_CHANCE) return 'short';
     if (rand < this.timing.SHORT_BREAK_CHANCE + this.timing.MEDIUM_BREAK_CHANCE) return 'medium';
     return 'long';
   }
-  
+
+  // Get Break Duration
   getBreakDuration(breakType) {
     switch (breakType) {
-      case 'short':
-        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
-      case 'medium':
-        return this.getRandomDelay(this.timing.MEDIUM_BREAK_MIN, this.timing.MEDIUM_BREAK_MAX);
-      case 'long':
-        return this.getRandomDelay(this.timing.LONG_BREAK_MIN, this.timing.LONG_BREAK_MAX);
-      default:
-        return this.getRandomDelay(this.timing.SHORT_BREAK_MIN, this.timing.SHORT_BREAK_MAX);
+      case 'short':  return this.getRandomDelay(this.timing.SHORT_BREAK_MIN,  this.timing.SHORT_BREAK_MAX);
+      case 'medium': return this.getRandomDelay(this.timing.MEDIUM_BREAK_MIN, this.timing.MEDIUM_BREAK_MAX);
+      case 'long':   return this.getRandomDelay(this.timing.LONG_BREAK_MIN,   this.timing.LONG_BREAK_MAX);
+      default:       return this.getRandomDelay(this.timing.SHORT_BREAK_MIN,  this.timing.SHORT_BREAK_MAX);
     }
   }
-  
+
+  // Get Random Delay
   getRandomDelay(min, max) {
     return min + Math.random() * (max - min);
   }
-  
-  // Get current break status
+
+  // Get Current Break Status
   getStatus() {
     if (!this.state.isOnBreak) {
       return {
-        isOnBreak: false,
+        isOnBreak:           false,
         raidsSinceLastBreak: this.state.raidsSinceLastBreak,
-        totalBreaks: this.state.totalBreaks
+        totalBreaks:         this.state.totalBreaks
       };
     }
-    
+
     const timeLeft = Math.max(0, this.state.breakEndTime - Date.now());
-    const minutesLeft = Math.floor(timeLeft / 60000);
-    const secondsLeft = Math.floor((timeLeft % 60000) / 1000);
-    
+
     return {
-      isOnBreak: true,
-      timeLeft,
-      minutesLeft,
-      secondsLeft,
-      breakStartTime: this.state.breakStartTime,
-      breakEndTime: this.state.breakEndTime,
+      isOnBreak:           true,
+      timeLeft:            timeLeft,
+      minutesLeft:         Math.floor(timeLeft / 60000),
+      secondsLeft:         Math.floor((timeLeft % 60000) / 1000),
+      breakStartTime:      this.state.breakStartTime,
+      breakEndTime:        this.state.breakEndTime,
       raidsSinceLastBreak: this.state.raidsSinceLastBreak,
-      totalBreaks: this.state.totalBreaks
+      totalBreaks:         this.state.totalBreaks
     };
   }
-  
-  // Set callback for when break ends
+
+  // Set Break End Callback
   setOnBreakEndCallback(callback) {
     this.onBreakEndCallback = callback;
   }
-  
-  // Force end break
-  forceEndBreak() {
-    console.log('🚀 Force Ending Break');
-    
-    if (!this.state.isOnBreak) {
-      console.log('⚠️ No Active Break to End');
-      return false;
-    }
-    
-    // Clear break state
-    this.state.isOnBreak = false;
-    this.state.raidsSinceLastBreak = 0;
-    
-    if (this.breakTimer) {
-      clearTimeout(this.breakTimer);
-      this.breakTimer = null;
-    }
-    
-    // Debug Log
-    console.log('✅ Break Force Ended');
-    
-    // Save State
-    this.saveState();
 
-    if (this.onBreakEndCallback) {
-      console.log('🔔 Invoking Break End Callback to Restart Automation...');
-      this.onBreakEndCallback();
-    }
-    
-    // Notify other components
-    chrome.runtime.sendMessage({
-      type: 'breakStatusUpdate',
-      isOnBreak: false,
-      raidsSinceLastBreak: 0
-    });
-    
-    return true;
-  }
-  
   // Reset Break Counter
   reset() {
     this.state.raidsSinceLastBreak = 0;
-    this.state.lastBreakTime = 0;
+    this.state.lastBreakTime       = 0;
     this.endBreak();
+  }
+
+  // Send Status Update
+  sendStatusUpdate() {
+    if (!this.state.isOnBreak) return;
+
+    chrome.runtime.sendMessage({
+      type:                'breakStatusUpdate',
+      isOnBreak:           true,
+      timeLeft:            Math.max(0, this.state.breakEndTime - Date.now()),
+      raidsSinceLastBreak: this.state.raidsSinceLastBreak
+    });
   }
 }

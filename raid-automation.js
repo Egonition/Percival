@@ -1,204 +1,188 @@
+'use strict';
+
 class RaidAutomator {
+
+  // ==========================================================
+  // Constructor
+  // ==========================================================
+
   constructor() {
     this.settings = {
-      autoRaid: false,
-      autoCombat: false,
+      autoRaid:    false,
+      autoCombat:  false,
       quickAttack: false,
     };
-    
+
     this.state = {
-      active: false,
-      lastAction: 'Ready',
-      totalClicks: 0,
-      lastCheck: 0,
-      autoCombatActive: false,
-      currentScreen: 'unknown',
+      active:                false,
+      lastAction:            'Ready',
+      totalClicks:           0,
+      lastCheck:             0,
+      autoCombatActive:      false,
+      currentScreen:         'unknown',
 
       // Human Behavior Tracking
-      lastHumanAction: Date.now(),
-      sessionStart: Date.now(),
-      totalRaids: 0,
-      lastMousePosition: { x: 0, y: 0 },
+      lastHumanAction:       Date.now(),
+      sessionStart:          Date.now(),
+      totalRaids:            0,
 
       // URL Tracking
-      lastUrl: window.location.href,
+      lastUrl:               window.location.href,
 
       // Raid Completion Tracking
-      lastRaidStartTime: 0,
-      raidInProgress: false,
+      lastRaidStartTime:     0,
+      raidInProgress:        false,
       lastRaidCompletionLog: 0,
-      
-      // Auto Combat Click Tracking
-      autoClickAttempted: false,
 
-      // UI State Tracking
-      hasSeenAutoButton: false
+      // Combat Tracking
+      autoClickAttempted:    false,
+      hasSeenAutoButton:     false,
+      solvingCaptcha:        false
     };
-    
+
     this.cooldowns = {
-      ok: 0,
+      ok:     0,
       attack: 0,
-      auto: 0
+      auto:   0
     };
-    
-    // Timing Settings
+
     this.timing = {
-      COOLDOWN: 2000 + Math.random() * 3000, // 2-5 seconds
-      CHECK_INTERVAL: 800 + Math.random() * 700, // 0.8-1.5 seconds
-      RAID_LOAD_MIN: 9000,   // 9 seconds minimum
-      RAID_LOAD_MAX: 16000,  // 16 seconds maximum
-      MOUSE_STEPS_MIN: 8,
-      MOUSE_STEPS_MAX: 20,   // Variable Mouse Movement
-      STEP_DELAY_MIN: 10,
-      STEP_DELAY_MAX: 30,    // Variable Step Timing
+      COOLDOWN:           2000 + Math.random() * 3000,  // 2-5 seconds
+      CHECK_INTERVAL:     800  + Math.random() * 700,   // 0.8-1.5 seconds
+      RAID_LOAD_MIN:      9000,
+      RAID_LOAD_MAX:      16000,
+      MOUSE_STEPS_MIN:    8,
+      MOUSE_STEPS_MAX:    20,
+      STEP_DELAY_MIN:     10,
+      STEP_DELAY_MAX:     30,
 
       // Human Delay Settings
-      HUMAN_DELAY_CHANCE: 0.3, // 30% chance of extra delay
-      HUMAN_DELAY_MIN: 500,    // 0.5 second minimum extra delay
-      HUMAN_DELAY_MAX: 3000,   // 3 second maximum extra delay
+      HUMAN_DELAY_CHANCE: 0.3,
+      HUMAN_DELAY_MIN:    500,
+      HUMAN_DELAY_MAX:    3000,
     };
 
-    // Initialize Break Manager
-    this.breakManager = new BreakManager({
-      enableBreaks: false
-    });
-    
+    this.breakManager  = new BreakManager({ enableBreaks: false });
+    this.mouse         = new MouseSimulator(this.timing);
+    this.captchaSolver = CONFIG.CAPSOLVER_API_KEY
+      ? new CaptchaSolver(CONFIG.CAPSOLVER_API_KEY)
+      : null;
+
     this.observer = null;
     this.interval = null;
     this.init();
   }
-  
+
+  // ==========================================================
+  // Initialization
+  // ==========================================================
+
   async init() {
-    // Load Settings from Storage
+    // Reset Captcha State on Init
+    this.state.solvingCaptcha = false;
+
     await this.loadSettings();
-
-    // Update Break Manager Settings
-    if (this.breakManager) {
-      this.breakManager.updateSettings({ enableBreaks: this.settings.enableBreaks });
-    }
-
-    // Load Break Manager State
+    this.breakManager.updateSettings({ enableBreaks: this.settings.enableBreaks });
     await this.loadBreakManagerState();
-
-    // Setup Break Manager State Saving
     this.setupBreakManagerState();
-
-    // Load Persistent State
     await this.loadPersistentState();
-    
-    // Setup Listeners and Observer
     this.setupListeners();
     this.setupObserver();
 
-    // Check Saved Play State
     chrome.storage.local.get(['isPlaying'], (data) => {
       const shouldBePlaying = data.isPlaying !== undefined ? data.isPlaying : true;
-      
-      if (shouldBePlaying) {
-        // User Wants Automation Running
-        const breakStatus = this.breakManager.getStatus();
-        if (!breakStatus.isOnBreak && (this.settings.autoRaid || this.settings.autoCombat)) {
-          this.start();
-        } else if (breakStatus.isOnBreak) {
-          chrome.storage.local.set({ isPlaying: true });
-          this.updateStatus('On break - Will Resume Automatically');
-        } else {
-          // No features enabled
-          chrome.storage.local.set({ isPlaying: false });
-          this.updateStatus('Enable Features to Start');
-        }
-      } else {
-        // User explicitly paused
+
+      if (!shouldBePlaying) {
         this.updateStatus('Paused - Click Start to Resume');
+        return;
+      }
+
+      const breakStatus = this.breakManager.getStatus();
+
+      if (breakStatus.isOnBreak) {
+        chrome.storage.local.set({ isPlaying: true });
+        this.updateStatus('On Break - Will Resume Automatically');
+      } else if (this.settings.autoRaid || this.settings.autoCombat) {
+        this.start();
+      } else {
+        chrome.storage.local.set({ isPlaying: false });
+        this.updateStatus('Enable Features to Start');
       }
     });
   }
-  
-  // Load Settings from Storage
+
+  // ==========================================================
+  // Storage
+  // ==========================================================
+
   async loadSettings() {
     return new Promise(resolve => {
       chrome.storage.sync.get(['autoRaid', 'autoCombat', 'quickAttack', 'enableBreaks'], data => {
-        this.settings.autoRaid = data.autoRaid || false;
-        this.settings.autoCombat = data.autoCombat || false;
-        this.settings.quickAttack = data.quickAttack || false;
+        this.settings.autoRaid     = data.autoRaid     || false;
+        this.settings.autoCombat   = data.autoCombat   || false;
+        this.settings.quickAttack  = data.quickAttack  || false;
         this.settings.enableBreaks = data.enableBreaks || false;
         resolve();
       });
     });
   }
 
-  // Load Persistent State
   async loadPersistentState() {
     return new Promise(resolve => {
       chrome.storage.local.get(['raidAutomatorState'], data => {
         if (data.raidAutomatorState) {
-          const saved = data.raidAutomatorState;
-          this.state.totalRaids = saved.totalRaids || 0;
-          this.state.sessionStart = saved.sessionStart || Date.now();
-          
-          // Debug Log
-          // console.log(`📊 Loaded: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+          this.state.totalRaids   = data.raidAutomatorState.totalRaids   || 0;
+          this.state.sessionStart = data.raidAutomatorState.sessionStart || Date.now();
         }
         resolve();
       });
     });
   }
 
-  // Save Persistent State
   async savePersistentState() {
-    const stateToSave = {
-      totalRaids: this.state.totalRaids,
-      sessionStart: this.state.sessionStart,
-    };
-
-    chrome.storage.local.set({ raidAutomatorState: stateToSave }, () => {
-      // Debug Log
-      // console.log(`💾 Saved: ${this.state.totalRaids} Raids, ${this.state.raidsSinceLastBreak} Since Last Break`);
+    chrome.storage.local.set({
+      raidAutomatorState: {
+        totalRaids:   this.state.totalRaids,
+        sessionStart: this.state.sessionStart
+      }
     });
   }
 
-  // Load Break Manager State
   async loadBreakManagerState() {
     return new Promise(resolve => {
       chrome.storage.local.get(['breakManagerState'], data => {
         if (data.breakManagerState && this.breakManager) {
-          // Debug Log
-          // console.log('🔄 Loading Break Manager State:', data.breakManagerState);
-          
-          // Load State into Break Manager
           this.breakManager.loadState(data.breakManagerState);
-
           if (this.breakManager.settings.enableBreaks) {
             const status = this.breakManager.getStatus();
             console.log(`Raids Since Last Break: ${status.raidsSinceLastBreak}`);
           }
-
-          
-        } else {
-          // Debug Log
-          // console.log('ℹ️ No Break Manager State Found to Load.');
         }
         resolve();
       });
     });
   }
 
-  // Save Break Manager State
+  async saveBreakManagerState() {
+    if (!this.breakManager) return;
+    chrome.storage.local.set({ breakManagerState: this.breakManager.saveState() });
+  }
+
+  // ==========================================================
+  // Setup
+  // ==========================================================
+
   setupBreakManagerState() {
     const originalOnRaidComplete = this.breakManager.onRaidComplete.bind(this.breakManager);
     this.breakManager.onRaidComplete = () => {
       const result = originalOnRaidComplete();
-      if (result) {
-        this.saveBreakManagerState();
-      }
+      if (result) this.saveBreakManagerState();
       return result;
     };
 
     this.breakManager.setOnBreakEndCallback(() => {
       this.saveBreakManagerState();
       this.updateStatus('Break Ended.');
-      
-      // Check if User Wants Automation Running
       chrome.storage.local.get(['isPlaying'], (data) => {
         if (data.isPlaying && (this.settings.autoRaid || this.settings.autoCombat)) {
           this.start();
@@ -207,1113 +191,650 @@ class RaidAutomator {
     });
   }
 
-  async saveBreakManagerState() {
-    if (this.breakManager) {
-      const state = this.breakManager.saveState();
-      // Debug Log
-      // console.log('🔄 Saving Break Manager State:', state);
-      chrome.storage.local.set({ breakManagerState: state }, () => {
-        // Debug Log
-        // console.log('✅ Break Manager State Saved.');
-      });
-    }
-  }
-
   setupListeners() {
     chrome.runtime.onMessage.addListener((msg, sender, respond) => {
-      if (msg.type === 'toggleAutomation') {
-        if (msg.action === 'play') {
-          // Check if any features are enabled
-          if (this.settings.autoRaid || this.settings.autoCombat) {
-            this.start();
-            respond({ success: true, status: 'Started' });
+      switch (msg.type) {
+        case 'toggleAutomation':
+          if (msg.action === 'play') {
+            if (this.settings.autoRaid || this.settings.autoCombat) {
+              this.start();
+              respond({ success: true, status: 'Started' });
+            } else {
+              respond({ success: false, status: 'No Features Enabled' });
+            }
+          } else if (msg.action === 'pause') {
+            this.stop();
+            respond({ success: true, status: 'Paused' });
+          }
+          break;
+
+        case 'updateSettings':
+          this.updateSettings(msg);
+          respond({ success: true });
+          break;
+
+        case 'getStatus':
+          respond({
+            type:                'raidStatusUpdate',
+            active:              this.state.active,
+            lastAction:          this.state.lastAction,
+            totalClicks:         this.state.totalClicks,
+            autoCombatActive:    this.state.autoCombatActive,
+            currentScreen:       this.state.currentScreen,
+            timestamp:           new Date().toLocaleTimeString(),
+            totalRaids:          this.state.totalRaids,
+            isOnBreak:           this.breakManager?.state?.isOnBreak           || false,
+            timeLeft:            this.getBreakTimeLeft(),
+            raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0
+          });
+          break;
+
+        case 'forceEndBreak':
+          if (this.breakManager) {
+            const success = this.breakManager.forceEndBreak();
+            respond({ success, message: success ? 'Break Force Ended' : 'No Active Break to End' });
+            this.safeSendMessage({ type: 'breakStatusUpdate', isOnBreak: false, raidsSinceLastBreak: 0 });
+            if (success && (this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
+              this.start();
+            }
           } else {
-            respond({ success: false, status: 'No Features Enabled' });
+            respond({ success: false, message: 'Break Manager Not Available' });
           }
-        } else if (msg.action === 'pause') {
-          this.stop();
-          respond({ success: true, status: 'Paused' });
-        }
-        return true;
-      }
+          break;
 
-      if (msg.type === 'updateSettings') {
-        this.updateSettings(msg);
-        respond({ success: true });
-      }
-      else if (msg.type === 'getStatus') {
-        respond({
-          type: 'raidStatusUpdate',
-          active: this.state.active,
-          lastAction: this.state.lastAction,
-          totalClicks: this.state.totalClicks,
-          autoCombatActive: this.state.autoCombatActive,
-          currentScreen: this.state.currentScreen,
-          timestamp: new Date().toLocaleTimeString(),
-          totalRaids: this.state.totalRaids,
-
-          // Break Status
-          isOnBreak: this.breakManager?.state?.isOnBreak || false,
-          timeLeft: this.breakManager?.state?.isOnBreak && this.breakManager.state.breakEndTime 
-            ? Math.max(0, this.breakManager.state.breakEndTime - Date.now())
-            : 0,
-          raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0
-        });
-      }
-      else if (msg.type === 'forceEndBreak') {
-        console.log('🚀 Received Force End Break Command');
-        
-        if (this.breakManager) {
-          const success = this.breakManager.forceEndBreak();
-          
-          // Prepare Status Update
-          const statusUpdate = {
-            type: 'breakStatusUpdate',
-            isOnBreak: false,
-            raidsSinceLastBreak: 0
-          };
-          
-          // Respond to Sender
-          respond({ 
-            success: success,
-            message: success ? 'Break Force Ended' : 'No Active Break to End'
+        case 'getBreakStatus':
+          respond({
+            isOnBreak:           this.breakManager?.state?.isOnBreak           || false,
+            timeLeft:            this.getBreakTimeLeft(),
+            raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0,
+            totalBreaks:         this.breakManager?.state?.totalBreaks         || 0
           });
-          
-          // Send Update to Popup
-          this.safeSendMessage(statusUpdate);
-
-          // Resume Automation if Enabled
-          if (success && (this.settings.autoRaid || this.settings.autoCombat) && !this.state.active) {
-            this.start();
-          }
-        } else {
-          respond({ 
-            success: false,
-            message: 'Break Manager Not Available'
-          });
-        }
-      }
-      else if (msg.type === 'getBreakStatus') {
-        respond({
-          isOnBreak: this.breakManager?.state?.isOnBreak || false,
-          timeLeft: this.breakManager?.state?.isOnBreak && this.breakManager.state.breakEndTime 
-            ? Math.max(0, this.breakManager.state.breakEndTime - Date.now())
-            : 0,
-          raidsSinceLastBreak: this.breakManager?.state?.raidsSinceLastBreak || 0,
-          totalBreaks: this.breakManager?.state?.totalBreaks || 0
-        });
+          break;
       }
       return true;
     });
-    
+
     chrome.storage.onChanged.addListener(changes => {
       if (changes.autoRaid || changes.autoCombat) {
         this.loadSettings().then(() => {
-          // Don't auto-start here - let the play button control this
-          // Just update status if we're currently running
-          if (this.state.active) {
-            this.updateStatus('Settings updated');
-          }
+          if (this.state.active) this.updateStatus('Settings Updated');
         });
       }
-
-      // Update Break Manager Settings if Changed
       if (changes.enableBreaks && this.breakManager) {
-        this.breakManager.updateSettings({
-          enableBreaks: changes.enableBreaks.newValue
-        });
+        this.breakManager.updateSettings({ enableBreaks: changes.enableBreaks.newValue });
       }
     });
   }
-  
+
   setupObserver() {
     this.observer = new MutationObserver((mutations) => {
-      if (this.state.active) {
-        // Check for Popups in Added Nodes
-        mutations.forEach((mutation) => {
-          if (mutation.addedNodes.length > 0) {
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === 1) { // Element Node
-                // Quick Check for Popups
-                if (this.hasBlockingPopup().found) {
-                  this.handlePopupDetected();
-                  return;
-                }
-              }
-            });
+      if (!this.state.active) return;
+
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === 1 && this.hasBlockingPopup().found) {
+            this.handlePopupDetected();
+            return;
           }
-        });
-        
-        this.detectCurrentScreen();
-        this.checkButtons();
+        }
       }
+
+      this.detectCurrentScreen();
+      this.checkButtons();
     });
-    
-    this.observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+
+    this.observer.observe(document.body, { childList: true, subtree: true });
   }
-  
+
+  // ==========================================================
+  // Screen Detection
+  // ==========================================================
+
   detectCurrentScreen() {
-    // Skip if on Break
     const breakStatus = this.breakManager.getStatus();
     if (breakStatus.isOnBreak) {
       this.state.currentScreen = 'break';
-      return; 
+      return;
     }
 
-    // Check for URL Change
     const previousScreen = this.state.currentScreen;
-    
-    // Check if in Raid Start Screen - Use findOkButton() to check both button types
-    const okButton = this.findOkButton();
-    const isStartScreen = okButton && this.isVisible(okButton);
-    
-    // Check if in Battle Screen
-    const autoButton = this.findAutoButton();
+    const currentUrl     = window.location.href;
+    const urlChanged     = this.state.lastUrl !== currentUrl;
+
+    const okButton       = this.findOkButton();
+    const autoButton     = this.findAutoButton();
+    const isStartScreen  = okButton   && this.isVisible(okButton);
     const isBattleScreen = autoButton && this.isVisible(autoButton);
 
-    // Get Current URL
-    const currentUrl = window.location.href;
-    const urlChanged = this.state.lastUrl && this.state.lastUrl !== currentUrl;
-    
-    // Update Current Screen State
     if (isStartScreen) {
       this.state.currentScreen = 'start';
-      
-      // Check if Came from Battle Screen
+
       if (previousScreen === 'battle' && this.state.raidInProgress) {
         this.handleRaidCompletion();
       }
-      
-      // Reset Battle Tracking
-      this.state.raidInProgress = false;
-      this.state.autoCombatActive = false;
+
+      this.state.raidInProgress     = false;
+      this.state.autoCombatActive   = false;
       this.state.autoClickAttempted = false;
-      this.state.hasSeenAutoButton = false;
-      
+      this.state.hasSeenAutoButton  = false;
+
     } else if (isBattleScreen) {
       this.state.currentScreen = 'battle';
-      
-      // Mark Raid as In Progress
+
       if (!this.state.raidInProgress) {
-        this.state.raidInProgress = true;
+        this.state.raidInProgress    = true;
         this.state.lastRaidStartTime = Date.now();
         this.updateStatus(`Raid ${this.state.totalRaids + 1} In Progress...`);
-
-        // Reset Auto Combat UI State
-        this.state.hasSeenAutoButton = false;
-        this.state.autoCombatActive = false;
+        this.state.hasSeenAutoButton  = false;
+        this.state.autoCombatActive   = false;
         this.state.autoClickAttempted = false;
       }
 
-      if (!this.state.hasSeenAutoButton) {
-        this.state.hasSeenAutoButton = true;
-      }
-      
-    } else {
-      if (urlChanged && previousScreen === 'battle' && this.state.raidInProgress) {
-        const wasBattleUrl = this.state.lastUrl.includes('/#raid/') ||
-                          this.state.lastUrl.includes('/#battle/');
-        const isNotBattleUrl = !currentUrl.includes('/#raid/') &&
-                          !currentUrl.includes('/#battle/');
-        
-        if (wasBattleUrl && isNotBattleUrl) {
-          // Debug Log
-          // console.log('🎯 URL Change Detected: Raid Completion.');
-          this.handleRaidCompletion();
-          this.state.raidInProgress = false;
-        }
+      if (!this.state.hasSeenAutoButton) this.state.hasSeenAutoButton = true;
+
+    } else if (urlChanged && previousScreen === 'battle' && this.state.raidInProgress) {
+      const wasBattleUrl   = this.state.lastUrl.includes('/#raid/')  || this.state.lastUrl.includes('/#battle/');
+      const isNotBattleUrl = !currentUrl.includes('/#raid/')         && !currentUrl.includes('/#battle/');
+
+      if (wasBattleUrl && isNotBattleUrl) {
+        this.handleRaidCompletion();
+        this.state.raidInProgress = false;
       }
     }
 
-    // Track URL Changes
     this.state.lastUrl = currentUrl;
   }
 
+  // ==========================================================
+  // Raid Completion
+  // ==========================================================
+
   handleRaidCompletion() {
-    // Prevent Duplicate Logs
     if (Date.now() - this.state.lastRaidCompletionLog < 1000) return;
-    
+
     this.state.totalRaids++;
     this.state.lastRaidCompletionLog = Date.now();
-    
-    const raidDuration = Date.now() - this.state.lastRaidStartTime;
-    const durationSeconds = Math.round(raidDuration / 1000);
-    
-    this.updateStatus(`Raid ${this.state.totalRaids} Complete! (${durationSeconds}s)`);
-    console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSeconds} Seconds.`);
 
-    // Check for Break
+    const raidDuration = Date.now() - this.state.lastRaidStartTime;
+    const durationSecs = Math.round(raidDuration / 1000);
+
+    this.updateStatus(`Raid ${this.state.totalRaids} Complete! (${durationSecs}s)`);
+    console.log(`✅ Raid ${this.state.totalRaids} Completed in ${durationSecs}s`);
+
     if (this.breakManager.onRaidComplete()) {
       this.stop();
       this.updateStatus('⏸️ Taking a Break. Automation Paused.');
-
-      // Send Break Status Update
       const breakStatus = this.breakManager.getStatus();
       this.safeSendMessage({
-        type: 'breakStatusUpdate',
-        isOnBreak: true,
-        timeLeft: breakStatus.timeLeft || 0,
+        type:                'breakStatusUpdate',
+        isOnBreak:           true,
+        timeLeft:            breakStatus.timeLeft || 0,
         raidsSinceLastBreak: breakStatus.raidsSinceLastBreak || 0
       });
     }
 
-    // Save State
     this.savePersistentState();
     this.saveBreakManagerState();
 
-    // Track Raid Durations for Averages
     this.state.raidDurations = this.state.raidDurations || [];
     this.state.raidDurations.push(raidDuration);
-    
-    // Log Average Raid Time Every 10 Raids
+
+    // Cap at Last 100 Entries
+    if (this.state.raidDurations.length > 100) {
+      this.state.raidDurations.shift();
+    }
+
     if (this.state.totalRaids % 10 === 0) {
-      const avgDuration = this.state.raidDurations.reduce((a, b) => a + b, 0) / this.state.raidDurations.length;
-      // Debug Log
-      console.log(`📊 Average Raid Time: ${Math.round(avgDuration/1000)}s`);
+      const avg = this.state.raidDurations.reduce((a, b) => a + b, 0) / this.state.raidDurations.length;
+      console.log(`📊 Average Raid Time: ${Math.round(avg / 1000)}s`);
     }
   }
-  
+
+  // ==========================================================
+  // Popup Detection
+  // ==========================================================
+
   hasBlockingPopup() {
-    // Check for Common Popup Elements
     const popupHeader = document.querySelector('.prt-popup-header');
-    if (popupHeader && this.isVisible(popupHeader)) {
-      // Get Popup Text
-      const popupText = popupHeader.textContent?.trim() || '';
-      
-      // Empty Popup Check
-      if (popupText.length === 0) {
-        return { found: false };
-      }
-      
-      const popupTextLower = popupText.toLowerCase();
-      
-      // Check for AP Related Popups
-      const isAPPopup = popupTextLower.includes('ap') || 
-                       popupTextLower.includes('aap');
-      
-      if (isAPPopup) {
-        return {
-          found: true,
-          element: popupHeader,
-          type: 'APPopup',
-          text: popupText
-        };
-      }
-      
-      // Check for Blocking Room Full Popups
-      const isBlockingPopup = popupTextLower.includes('満員') ||
-                             popupTextLower.includes('満室'); 
-      
-      if (isBlockingPopup) {
-        return {
-          found: true,
-          element: popupHeader,
-          type: 'BlockingPopup',
-          text: popupText
-        };
-      }
+    if (!popupHeader || !this.isVisible(popupHeader)) return { found: false };
 
-      // Check for Access Verification Popups
-      const isAccessVerification = popupTextLower.includes('access') ||
-                                  popupTextLower.includes('verification') ||
-                                  popupTextLower.includes('アクセス') ||
-                                  popupTextLower.includes('確認');
-      
-      if (isAccessVerification) {
-        return {
-          found: true,
-          element: popupHeader,
-          type: 'AccessVerification',
-          text: popupText
-        };
-      }
+    const popupText = popupHeader.textContent?.trim() || '';
+    if (!popupText.length) return { found: false };
 
+    const text = popupText.toLowerCase();
+
+    const popupTypes = [
+      {
+        type:  'APPopup',
+        match: text.includes('ap') || text.includes('aap')
+      },
+      {
+        type:  'BlockingPopup',
+        match: text.includes('満員') || text.includes('満室')
+      },
+      {
+        type:  'AccessVerification',
+        match: text.includes('access')       || text.includes('verification') ||
+               text.includes('アクセス') || text.includes('確認')
+      }
+    ];
+
+    for (const { type, match } of popupTypes) {
+      if (match) return { found: true, element: popupHeader, type, text: popupText };
     }
-    
+
     return { found: false };
   }
-  
+
   handlePopupDetected() {
     if (!this.state.active) return;
-    
+
     const popupInfo = this.hasBlockingPopup();
-    if (popupInfo.found) {
-      this.stop(); // This will set automationPlaying to false
-      
-      let statusMessage;
-      if (popupInfo.type === 'AccessVerification') {
-        statusMessage = `Access Verification Required. Please Complete the Verification Manually.`;
-      } else {
-        statusMessage = `Popup Detected: ${popupInfo.text}`;
-      }
+    if (!popupInfo.found) return;
 
-      this.updateStatus(statusMessage);
-      
-      const status = {
-        type: 'popupDetected',
-        active: false,
-        lastAction: statusMessage,
-        popupInfo: popupInfo,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      
-      this.safeSendMessage(status);
-      chrome.storage.local.set({ raidStatus: status });
-      
-      console.warn('⚠️ Popup Detected - Automation Paused.', popupInfo.text);
+    if (popupInfo.type === 'AccessVerification') {
+      this.handleCaptchaPopup();
+      return;
     }
+
+    this.stop();
+
+    const statusMessage = `Popup Detected: ${popupInfo.text}`;
+    this.updateStatus(statusMessage);
+
+    const status = {
+      type:       'popupDetected',
+      active:     false,
+      lastAction: statusMessage,
+      popupInfo:  popupInfo,
+      timestamp:  new Date().toLocaleTimeString()
+    };
+
+    this.safeSendMessage(status);
+    chrome.storage.local.set({ raidStatus: status });
+    console.warn('⚠️ Popup Detected - Automation Paused.', popupInfo.text);
   }
 
-  // Safe Send Message Wrapper
-  safeSendMessage(message) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage(message, (response) => {
-          // Check for Last Error
-          if (chrome.runtime.lastError) {
-            // Silent Ignore Receiving End Error
-            const errorMsg = chrome.runtime.lastError.message || '';
-            if (!errorMsg.includes('Receiving end does not exist')) {
-              // Debug Log
-              // console.log('Message Send Error:', errorMsg);
-            }
+  // ==========================================================
+  // Captcha
+  // ==========================================================
+
+  async handleCaptchaPopup(retryCount = 0) {
+    if (!this.captchaSolver) {
+      this.updateStatus('Captcha Detected - API Key Required to Auto-Solve.');
+      this.stop();
+      return;
+    }
+
+    if (this.state.solvingCaptcha) return;
+    this.state.solvingCaptcha = true;
+
+    const MAX_RETRIES = 3;
+
+    console.log('🔐 Access Verification Detected - Attempting Captcha Solve...');
+    this.updateStatus('Solving Captcha...');
+
+    try {
+      await this.sleep(800);
+
+      const captchaImg = document.querySelector('.prt-popup-body img.image');
+
+      if (!captchaImg) {
+        console.warn('⚠️ Captcha Image Not Found.');
+        this.updateStatus('Captcha Image Not Found - Manual Input Required.');
+        this.stop();
+        this.state.solvingCaptcha = false;
+        return;
+      }
+
+      const solution = await this.captchaSolver.solve(captchaImg);
+
+      if (solution) {
+        await this.sleep(400 + Math.random() * 300);
+        const submitted = await this.captchaSolver.submitSolution(solution);
+
+        if (submitted) {
+          this.updateStatus('Captcha Submitted - Resuming...');
+          await this.sleep(2000);
+
+          if (!this.hasBlockingPopup().found) {
+            console.log('✅ Captcha Cleared - Automation Resuming.');
+
+            this.state.solvingCaptcha = false;
+            return;
           }
-          resolve(response);
-        });
-      } catch (error) {
-        // Silent Ignore Errors
-        resolve();
+
+          if (retryCount < MAX_RETRIES) {
+            console.warn(`⚠️ Retrying Captcha... (${retryCount + 1}/${MAX_RETRIES})`);
+            this.state.solvingCaptcha = false;
+            await this.sleep(1000);
+            await this.handleCaptchaPopup(retryCount + 1);
+            return;
+          }
+
+          console.warn('❌ Max Retries Reached - Pausing Automation.');
+          this.updateStatus('Captcha Failed After 3 Attempts - Manual Input Required.');
+          this.stop();
+          return;
+        }
       }
-    });
-  }
 
-  updateSettings(msg) {
-    this.settings.autoRaid = msg.autoRaid ?? this.settings.autoRaid;
-    this.settings.autoCombat = msg.autoCombat ?? this.settings.autoCombat;
-    this.settings.quickAttack = msg.quickAttack ?? this.settings.quickAttack;
+      console.warn('❌ Could Not Solve Captcha - Pausing Automation.');
+      this.updateStatus('Captcha Solve Failed - Manual Input Required.');
+      this.stop();
 
-    // Update Break Manager Settings
-    if (this.breakManager && msg.enableBreaks !== undefined) {
-      this.breakManager.updateSettings({ enableBreaks: msg.enableBreaks });
+    } catch (error) {
+      console.error('❌ Captcha Handler Error:', error);
+      this.updateStatus('Captcha Error - Paused.');
+      this.stop();
     }
 
-    // Update Status
-    if (this.state.active) {
-      this.updateStatus('Settings Updated')
-    }
+    this.state.solvingCaptcha = false;
   }
-  
+
+  // ==========================================================
+  // Automation Control
+  // ==========================================================
+
   start() {
     if (this.state.active) return;
 
-    // Check if on Break before Start
     const breakStatus = this.breakManager.getStatus();
     if (breakStatus.isOnBreak) {
       this.updateStatus('On Break - Cannot Start');
       return;
     }
-    
+
     this.state.active = true;
     this.interval = setInterval(() => {
       this.detectCurrentScreen();
       this.checkButtons();
     }, this.timing.CHECK_INTERVAL);
-    
-    let statusMessage = 'Automation Active: ';
-    const features = [];
-    if (this.settings.autoRaid) features.push('Start Raid');
-    if (this.settings.autoCombat) features.push('Full Auto');
-    statusMessage += features.join(' + ');
-    
-    this.updateStatus(statusMessage);
-    
-    // Save Play State
+
+    const features = [
+      this.settings.autoRaid   && 'Start Raid',
+      this.settings.autoCombat && 'Full Auto'
+    ].filter(Boolean).join(' + ');
+
+    this.updateStatus(`Automation Active: ${features}`);
     chrome.storage.local.set({ isPlaying: true });
   }
-  
+
   stop() {
     if (!this.state.active) return;
-    
+
     this.state.active = false;
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
+
     this.updateStatus('Automation Stopped');
-    
-    // Save Play State
     chrome.storage.local.set({ isPlaying: false });
   }
 
-  shouldBeRunning() {
-    // Check if Automation Features are Enabled AND NOT on Break
-    const breakStatus = this.breakManager.getStatus();
-    return (this.settings.autoRaid || this.settings.autoCombat) && !breakStatus.isOnBreak;
-  }
-  
-  getRandomDelay(min, max) {
-    return min + Math.random() * (max - min);
-  }
-  
-  checkButtons() {
-    // Skip if on Break
-    const breakStatus = this.breakManager.getStatus();
-    if (breakStatus.isOnBreak) { return; }
+  updateSettings(msg) {
+    this.settings.autoRaid    = msg.autoRaid    ?? this.settings.autoRaid;
+    this.settings.autoCombat  = msg.autoCombat  ?? this.settings.autoCombat;
+    this.settings.quickAttack = msg.quickAttack ?? this.settings.quickAttack;
 
-    if (!this.state.active) return;
-    
-    // Check for Popups
+    if (this.breakManager && msg.enableBreaks !== undefined) {
+      this.breakManager.updateSettings({ enableBreaks: msg.enableBreaks });
+    }
+
+    if (this.state.active) this.updateStatus('Settings Updated');
+  }
+
+  // ==========================================================
+  // Button Checks
+  // ==========================================================
+
+  checkButtons() {
+    const breakStatus = this.breakManager.getStatus();
+    if (breakStatus.isOnBreak || !this.state.active) return;
+
+    // Reload on Dead Boss
+    if (this.state.currentScreen === 'battle' && this.findDeadBoss()) {
+      console.log('💀 Boss is Dead - Reloading Page...');
+      this.updateStatus('Boss Dead - Reloading...');
+      setTimeout(() => window.location.reload(), 1000 + Math.random() * 1000);
+      return;
+    }
+
     if (this.hasBlockingPopup().found) {
       this.handlePopupDetected();
       return;
     }
-    
+
     const now = Date.now();
     if (now - this.state.lastCheck < 500) return;
     this.state.lastCheck = now;
-    
-    // Check for OK button if autoRaid is enabled AND in start screen
+
+    // Start Raid
     if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
       const okButton = this.findOkButton();
       if (okButton) {
-        // Check for Popup before Clicking OK Button
-        if (this.hasBlockingPopup().found) {
-          this.handlePopupDetected();
-          return;
-        }
+        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
         this.clickRaidStart(okButton);
       }
     }
 
-    // Check for Attack button if quickAttack is enabled AND in battle screen
-    if (this.settings.quickAttack && this.canClick('attack') && 
-        this.state.currentScreen === 'battle' &&
-        this.state.hasSeenAutoButton &&
-        !this.state.autoClickAttempted &&
-        !this.state.autoCombatActive) {
+    const inBattle = this.state.currentScreen === 'battle' &&
+                     this.state.hasSeenAutoButton          &&
+                     !this.state.autoClickAttempted        &&
+                     !this.state.autoCombatActive;
+
+    // Quick Attack
+    if (this.settings.quickAttack && this.canClick('attack') && inBattle) {
       const attackButton = this.findAttackButton();
       if (attackButton) {
-        if (this.hasBlockingPopup().found) {
-          this.handlePopupDetected();
-          return;
-        }
+        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
         this.clickQuickAttack(attackButton);
         return;
       }
     }
 
-    // Check for Auto button if autoCombat is enabled AND in battle screen
-    if (this.settings.autoCombat && this.canClick('auto') && 
-        this.state.currentScreen === 'battle' &&
-        this.state.hasSeenAutoButton &&
-        !this.state.autoClickAttempted &&
-        !this.state.autoCombatActive) {
+    // Auto Combat
+    if (this.settings.autoCombat && this.canClick('auto') && inBattle) {
       const autoButton = this.findAutoButton();
       if (autoButton) {
-        // Check for Popup before Clicking Auto Button
-        if (this.hasBlockingPopup().found) {
-          this.handlePopupDetected();
-          return;
-        }
+        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
         this.clickAutoCombat(autoButton);
       }
     }
   }
-  
+
+  // ==========================================================
+  // Click Actions
+  // ==========================================================
+
   async clickRaidStart(button) {
-    // Check for Popups
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    this.cooldowns.ok = Date.now();
-    
-    // Reset Auto Combat State
-    this.state.autoCombatActive = false;
-    this.state.autoClickAttempted = false; // Reset for New Battle
+    if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
 
-    // Increment Total Raids
-    const nextRaidNumber = this.state.totalRaids + 1;
-    this.updateStatus(`Starting Raid ${nextRaidNumber}...`);
+    this.cooldowns.ok             = Date.now();
+    this.state.autoCombatActive   = false;
+    this.state.autoClickAttempted = false;
 
-    // Save State Before Starting Raid
+    this.updateStatus(`Starting Raid ${this.state.totalRaids + 1}...`);
     await this.savePersistentState();
     await this.saveBreakManagerState();
-    
-    // Add Human-Like Delay before Action
-    if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
-      const extraDelay = this.getRandomDelay(
-        this.timing.HUMAN_DELAY_MIN,
-        this.timing.HUMAN_DELAY_MAX
-      );
-      this.updateStatus(`Thinking... (+${Math.round(extraDelay/1000)}s)`);
-      await this.sleep(extraDelay);
-      
-      // Check for Popup during Delay
-      if (this.hasBlockingPopup().found) {
-        this.handlePopupDetected();
-        return;
-      }
-    }
-    
-    // Check for Popup before Click 
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    // Perform Click
-    await this.simulateHumanClick(button, 'OK');
 
-    // Update Status
-    this.updateStatus(`Raid Started - Waiting for Battle Screen...`);
+    if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
+      const delay = this.getRandomDelay(this.timing.HUMAN_DELAY_MIN, this.timing.HUMAN_DELAY_MAX);
+      this.updateStatus(`Thinking... (+${Math.round(delay / 1000)}s)`);
+      await this.sleep(delay);
+      if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+    }
+
+    if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+
+    await this.mouse.simulateHumanClick(button, 'OK', () => this.hasBlockingPopup().found);
+    this.state.totalClicks++;
+    this.updateStatus('Raid Started - Waiting for Battle Screen...');
   }
-  
+
   async clickAutoCombat(button) {
-    // Check for Popup
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    // Mark Auto Click as Attempted
+    if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+
     this.state.autoClickAttempted = true;
-    this.cooldowns.auto = Date.now();
-    
-    // Add Human-Like Delay before Action
+    this.cooldowns.auto           = Date.now();
+
     if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
-      const extraDelay = this.getRandomDelay(
-        this.timing.HUMAN_DELAY_MIN,
-        this.timing.HUMAN_DELAY_MAX
-      );
-      await this.sleep(extraDelay);
-      
-      // Check for Popup during Delay
-      if (this.hasBlockingPopup().found) {
-        this.handlePopupDetected();
-        return;
-      }
+      const delay = this.getRandomDelay(this.timing.HUMAN_DELAY_MIN, this.timing.HUMAN_DELAY_MAX);
+      await this.sleep(delay);
+      if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
     }
-    
-    // Get Click Coordinates within the Button
-    const rect = button.getBoundingClientRect();
-    
-    const safeAreaPercent = 0.9; // 90% Safe Area
-    const widthPadding = rect.width * (1 - safeAreaPercent) / 2;
-    const heightPadding = rect.height * (1 - safeAreaPercent) / 2;
 
-    const clickableLeft = rect.left + widthPadding;
-    const clickableRight = rect.right - widthPadding;
-    const clickableTop = rect.top + heightPadding;
-    const clickableBottom = rect.bottom - heightPadding;
+    const { x, y } = this.mouse.getRandomClickPoint(button);
+    await this.mouse.simulateHumanMouseMovement(x, y);
+    await this.sleep(this.getRandomDelay(50, 200));
+    await this.mouse.applyMicroAdjust(x, y);
 
-    const clickableWidth = clickableRight - clickableLeft;
-    const clickableHeight = clickableBottom - clickableTop;
-    
-    // Choose Random Point within the Safe Area
-    let x, y;
-    const hotspotBias = Math.random();
-    
-    if (hotspotBias < 0.3) {
-      // 30% chance: Click Near Center
-      const centerX = clickableLeft + clickableWidth / 2;
-      const centerY = clickableTop + clickableHeight / 2;
-      const variance = Math.min(clickableWidth, clickableHeight) * 0.2;
-      x = centerX + (Math.random() - 0.5) * variance;
-      y = centerY + (Math.random() - 0.5) * variance;
-    } else if (hotspotBias < 0.6) {
-      // 30% chance: Click in Top-Left Quadrant
-      x = clickableLeft + Math.random() * (clickableWidth * 0.5);
-      y = clickableTop + Math.random() * (clickableHeight * 0.5);
-    } else {
-      // 40% chance: Completely Random within Safe Area
-      x = clickableLeft + Math.random() * clickableWidth;
-      y = clickableTop + Math.random() * clickableHeight;
-    }
-    
-    // Add Random Offset
-    x += (Math.random() - 0.5) * 4;
-    y += (Math.random() - 0.5) * 4;
-    
-    // Ensure Coordinates are within Safe Bounds
-    x = Math.max(clickableLeft, Math.min(x, clickableRight));
-    y = Math.max(clickableTop, Math.min(y, clickableBottom));
-    
-    // Human-Like Mouse Movement to the Point
-    await this.simulateHumanMouseMovement(x, y);
-    
-    // Variable Click Timing
-    const clickDelay = this.getRandomDelay(50, 200);
-    await this.sleep(clickDelay);
-    
-    // Micro Adjustment
-    if (Math.random() < 0.4) {
-      const microX = x + (Math.random() - 0.5) * 6;
-      const microY = y + (Math.random() - 0.5) * 6;
-      const microEvent = new MouseEvent('mousemove', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: microX,
-        clientY: microY
-      });
-      document.dispatchEvent(microEvent);
-      await this.sleep(20 + Math.random() * 50);
-    }
-    
-    // Perform Click
-    const clicked = await this.performSingleReliableClick(button, x, y, 'Auto Combat');
-    
-    if (clicked) {
-      this.state.autoCombatActive = true;
-      this.updateStatus('Auto Combat Enabled');
-    } else {
-      // Mark Click as Attempted to Prevent Endless Retries
-      this.state.autoCombatActive = true;
-      this.updateStatus('Auto Combat Enabled.');
-
-      // Debug Log
-      // console.log('⚠️ Auto combat has been marked as enabled.');
-    }
+    const clicked = await this.mouse.performSingleReliableClick(button, x, y, 'Auto Combat');
+    this.state.autoCombatActive = true;
+    this.state.totalClicks++;
+    this.updateStatus(clicked ? 'Auto Combat Enabled' : 'Auto Combat Enabled.');
   }
 
   async clickQuickAttack(button) {
-    // Check for Popup
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    // Mark as Attempted
+    if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+
     this.state.autoClickAttempted = true;
-    this.cooldowns.auto = Date.now();
-    
-    // Add Human-Like Delay before Action
+    this.cooldowns.auto           = Date.now();
+
     if (Math.random() < this.timing.HUMAN_DELAY_CHANCE) {
-      const extraDelay = this.getRandomDelay(
-        this.timing.HUMAN_DELAY_MIN,
-        this.timing.HUMAN_DELAY_MAX
-      );
-      await this.sleep(extraDelay);
-      
-      // Check for Popup during Delay
-      if (this.hasBlockingPopup().found) {
-        this.handlePopupDetected();
-        return;
-      }
+      const delay = this.getRandomDelay(this.timing.HUMAN_DELAY_MIN, this.timing.HUMAN_DELAY_MAX);
+      await this.sleep(delay);
+      if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
     }
-    
-    // Perform Click
-    await this.simulateHumanClick(button, 'Quick Attack');
-    
+
+    await this.mouse.simulateHumanClick(button, 'Quick Attack', () => this.hasBlockingPopup().found);
     this.state.autoCombatActive = true;
+    this.state.totalClicks++;
     this.updateStatus('Quick Attack Used - Waiting for Completion');
-    
+
     setTimeout(() => {
-      this.state.autoCombatActive = false;
+      this.state.autoCombatActive   = false;
       this.state.autoClickAttempted = false;
     }, 5000);
   }
-  
+
+  // ==========================================================
+  // Element Finders
+  // ==========================================================
+
   findOkButton() {
-    // Check both button types
-    const button1 = document.querySelector('.btn-usual-ok.se-quest-start');
-    const button2 = document.querySelector('.btn-usual-ok.btn-silent-se');
-    
-    // Return first visible button found
-    if (button1 && this.isVisible(button1)) return button1;
-    if (button2 && this.isVisible(button2)) return button2;
-    
+    const b1 = document.querySelector('.btn-usual-ok.se-quest-start');
+    const b2 = document.querySelector('.btn-usual-ok.btn-silent-se');
+    if (b1 && this.isVisible(b1)) return b1;
+    if (b2 && this.isVisible(b2)) return b2;
     return null;
   }
 
   findAttackButton() {
-    const button = document.querySelector('.btn-attack-start.display-on');
-    return button && this.isVisible(button) ? button : null;
+    const btn = document.querySelector('.btn-attack-start');
+    return btn && this.isVisible(btn) ? btn : null;
   }
-  
+
   findAutoButton() {
-    const button = document.querySelector('.btn-auto');
-    return button && this.isVisible(button) ? button : null;
+    const btn = document.querySelector('.btn-auto');
+    return btn && this.isVisible(btn) ? btn : null;
   }
-  
+
+  findDeadBoss() {
+    const hpElement = document.getElementById('enemy-hp0');
+    return hpElement && hpElement.textContent.trim() === '0';
+  }
+
   isVisible(element) {
     if (!element) return false;
-    
     const style = window.getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    
-    return style.display !== 'none' &&
+    const rect  = element.getBoundingClientRect();
+    return style.display    !== 'none'   &&
            style.visibility !== 'hidden' &&
-           rect.width > 0 &&
+           rect.width  > 0 &&
            rect.height > 0 &&
-           rect.top >= 0 &&
-           rect.left >= 0;
+           rect.top    >= 0 &&
+           rect.left   >= 0;
   }
-  
+
   canClick(type) {
     return Date.now() - this.cooldowns[type] > this.timing.COOLDOWN;
   }
-  
-  async simulateHumanClick(element, actionName) {
-    if (!element) return;
-    
-    // Check for Popup before Click
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    const rect = element.getBoundingClientRect();
-    
-    const safeAreaPercent = 0.9; // 90% Safe Area
-    const widthPadding = rect.width * (1 - safeAreaPercent) / 2;
-    const heightPadding = rect.height * (1 - safeAreaPercent) / 2;
 
-    const clickableLeft = rect.left + widthPadding;
-    const clickableRight = rect.right - widthPadding;
-    const clickableTop = rect.top + heightPadding;
-    const clickableBottom = rect.bottom - heightPadding;
+  // ==========================================================
+  // Status & Messaging
+  // ==========================================================
 
-    const clickableWidth = clickableRight - clickableLeft;
-    const clickableHeight = clickableBottom - clickableTop;
-    
-    let x, y;
-    
-    // Add Hotspot Bias - Humans Tend to Click Certain Areas More
-    const hotspotBias = Math.random();
-    if (hotspotBias < 0.3) {
-      // 30% chance: Click Near Center
-      const centerX = clickableLeft + clickableWidth / 2;
-      const centerY = clickableTop + clickableHeight / 2;
-      const variance = Math.min(clickableWidth, clickableHeight) * 0.2;
-      x = centerX + (Math.random() - 0.5) * variance;
-      y = centerY + (Math.random() - 0.5) * variance;
-    } else if (hotspotBias < 0.6) {
-      // 30% chance: Click in Top-Left Quadrant
-      x = clickableLeft + Math.random() * (clickableWidth * 0.5);
-      y = clickableTop + Math.random() * (clickableHeight * 0.5);
-    } else {
-      // 40% chance: Completely Random within Safe Area
-      x = clickableLeft + Math.random() * clickableWidth;
-      y = clickableTop + Math.random() * clickableHeight;
+  buildStatus(lastAction) {
+    const status = {
+      type:             'raidStatusUpdate',
+      active:           this.state.active,
+      lastAction,
+      totalClicks:      this.state.totalClicks,
+      autoCombatActive: this.state.autoCombatActive,
+      currentScreen:    this.state.currentScreen,
+      totalRaids:       this.state.totalRaids,
+      timestamp:        new Date().toLocaleTimeString()
+    };
+
+    if (this.breakManager) {
+      Object.assign(status, this.breakManager.getStatus());
     }
-    
-    // Add Random Offset (±2px)
-    x += (Math.random() - 0.5) * 4;
-    y += (Math.random() - 0.5) * 4;
-    
-    // Ensure Coordinates are within Safe Bounds
-    x = Math.max(clickableLeft, Math.min(x, clickableRight));
-    y = Math.max(clickableTop, Math.min(y, clickableBottom));
-    
-    // Save Mouse Position for Next Movement
-    this.state.lastMousePosition = { x, y };
-    
-    // Human-like Mouse Movement to the Randomized Point
-    await this.simulateHumanMouseMovement(x, y);
-    
-    // Check for Popup after Mouse Movement
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    // Variable Click Time
-    const clickDelay = this.getRandomDelay(50, 200); // 50-200ms delay
-    await this.sleep(clickDelay);
-    
-    // Check for Popup during Click Delay
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-    
-    // Micro Adjust Mouse before Click
-    if (Math.random() < 0.4) {
-      const microX = x + (Math.random() - 0.5) * 6;
-      const microY = y + (Math.random() - 0.5) * 6;
-      const microEvent = new MouseEvent('mousemove', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: microX,
-        clientY: microY
-      });
-      document.dispatchEvent(microEvent);
-      await this.sleep(20 + Math.random() * 50);
-      
-      // Check for Popup during Micro Adjust
-      if (this.hasBlockingPopup().found) {
-        this.handlePopupDetected();
-        return;
+
+    return status;
+  }
+
+  updateStatus(message) {
+    this.state.lastAction = message;
+    const status = this.buildStatus(message);
+    this.safeSendMessage(status);
+    chrome.storage.local.set({ raidStatus: status });
+  }
+
+  safeSendMessage(message) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            const err = chrome.runtime.lastError.message || '';
+            if (!err.includes('Receiving end does not exist')) {
+              console.warn('Message Send Error:', err);
+            }
+          }
+          resolve(response);
+        });
+      } catch {
+        resolve();
       }
-    }
-    
-    // Perform Click
-    await this.performSingleReliableClick(element, x, y, actionName);
-    this.state.totalClicks++;
-    
-    // Update Status
-    this.sendStatusUpdate(actionName);
-    
-    // Debug Log
-    // console.log(`📍 ${actionName} at ${Math.round(x)},${Math.round(y)} (${Math.round(((x - rect.left) / rect.width) * 100)}%,${Math.round(((y - rect.top) / rect.height) * 100)}%)`);
+    });
   }
-  
-  async performSingleReliableClick(element, x, y, actionName = '') {
-    try {
-      // Validate Coordinates are Finite Numbers
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        console.error(`Invalid coordinates for ${actionName}: x=${x}, y=${y}`);
-        
-        // Fallback to Center of Element
-        const rect = element.getBoundingClientRect();
-        x = rect.left + rect.width / 2;
-        y = rect.top + rect.height / 2;
 
-        // Debug Log
-        // console.log(`Using fallback coordinates: x=${x}, y=${y}`);
-      }
-      
-      // Human-like Click Timing
-      const mouseDownDuration = this.getRandomDelay(30, 80);
-      const betweenDownUp = this.getRandomDelay(5, 20);
-      
-      // Mouse Down
-      const mouseDown = new MouseEvent('mousedown', {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: 0,
-        buttons: 1
-      });
-      
-      element.dispatchEvent(mouseDown);
-      await this.sleep(mouseDownDuration);
-      
-      // Mouse Up
-      const mouseUp = new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: 0,
-        buttons: 0
-      });
-      
-      // Click Event
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        button: 0
-      });
-      
-      element.dispatchEvent(mouseUp);
-      await this.sleep(betweenDownUp);
-      element.dispatchEvent(clickEvent);
-      
-      // Try the Click Method
-      if (typeof element.click === 'function') {
-        await this.sleep(10);
-        element.click();
-      }
-      
-      // Debug Log
-      // console.log(`✅ ${actionName} Click at ${Math.round(x)},${Math.round(y)}`);
+  // ==========================================================
+  // Utilities
+  // ==========================================================
 
-      return true;
-    } catch (error) {
+  getBreakTimeLeft() {
+    return this.breakManager?.state?.isOnBreak && this.breakManager.state.breakEndTime
+      ? Math.max(0, this.breakManager.state.breakEndTime - Date.now())
+      : 0;
+  }
 
-      // Debug Log
-      // console.log(`❌ Click failed for ${actionName}:`, error);
+  getRandomDelay(min, max) {
+    return min + Math.random() * (max - min);
+  }
 
-      return false;
-    }
-  }
-  
-  async simulateHumanMouseMovement(targetX, targetY) {
-    // Start from Realistic Positions
-    let startX, startY;
-    
-    // Humans Move from Previous Interaction Points
-    if (Math.random() < 0.6 && this.state.lastMousePosition.x > 0) {
-      // 60% chance: Start from Last Known Mouse Position
-      startX = this.state.lastMousePosition.x;
-      startY = this.state.lastMousePosition.y;
-    } else if (Math.random() < 0.8) {
-      // 20% chance: Start from Typical Resting Position
-      startX = window.innerWidth * 0.8 + Math.random() * window.innerWidth * 0.2;
-      startY = window.innerHeight * 0.8 + Math.random() * window.innerHeight * 0.2;
-    } else {
-      // 20% chance: Start from Completely Random Position
-      startX = Math.random() * window.innerWidth;
-      startY = Math.random() * window.innerHeight;
-    }
-    
-    // Variable Number of Steps
-    const steps = Math.floor(this.getRandomDelay(
-      this.timing.MOUSE_STEPS_MIN,
-      this.timing.MOUSE_STEPS_MAX
-    ));
-    
-    // Choose Path Type
-    const pathType = Math.random();
-    let pathFunction;
-    
-    if (pathType < 0.4) {
-      // 40%: Direct but Slight Curve
-      pathFunction = this.easeInOutQuad;
-    } else if (pathType < 0.7) {
-      // 30%: More Curve
-      pathFunction = this.easeInOutCubic;
-    } else if (pathType < 0.9) {
-      // 20%: Linear
-      pathFunction = (t) => t;
-    } else {
-      // 10%: Overshoot and Correction
-      pathFunction = this.easeOutBack;
-    }
-    
-    // Move In Steps
-    for (let i = 0; i <= steps; i++) {
-      const progress = i / steps;
-      const easedProgress = pathFunction(progress);
-      
-      let currentX, currentY;
-      
-      // For Overshoot Path Handle
-      if (pathFunction === this.easeOutBack) {
-        const overshoot = 0.2;
-        const overshootProgress = progress < 0.8 ? progress / 0.8 : 1;
-        const overshootX = startX + (targetX - startX) * 1.2;
-        const overshootY = startY + (targetY - startY) * 1.2;
-        
-        if (progress < 0.8) {
-          currentX = startX + (overshootX - startX) * easedProgress;
-          currentY = startY + (overshootY - startY) * easedProgress;
-        } else {
-          const correctionProgress = (progress - 0.8) / 0.2;
-          const correctionEase = this.easeInOutQuad(correctionProgress);
-          currentX = overshootX + (targetX - overshootX) * correctionEase;
-          currentY = overshootY + (targetY - overshootY) * correctionEase;
-        }
-      } else {
-        currentX = startX + (targetX - startX) * easedProgress;
-        currentY = startY + (targetY - startY) * easedProgress;
-      }
-      
-      // Dispatch Mouse Move Event
-      const event = new MouseEvent('mousemove', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: currentX,
-        clientY: currentY
-      });
-      
-      document.dispatchEvent(event);
-      
-      // Variable Delay between Steps
-      if (i < steps) {
-        const stepDelay = this.getRandomDelay(
-          this.timing.STEP_DELAY_MIN,
-          this.timing.STEP_DELAY_MAX
-        );
-        await this.sleep(stepDelay);
-      }
-    }
-    
-    // Final Micro Adjust
-    if (Math.random() < 0.3) {
-      await this.sleep(30 + Math.random() * 70);
-      const finalX = targetX + (Math.random() - 0.5) * 6;
-      const finalY = targetY + (Math.random() - 0.5) * 6;
-      
-      const finalEvent = new MouseEvent('mousemove', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: finalX,
-        clientY: finalY
-      });
-      document.dispatchEvent(finalEvent);
-    }
-  }
-  
-  // Easing Function for Natural Movement
-  easeInOutQuad(t) {
-    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  }
-  
-  easeInOutCubic(t) {
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  }
-  
-  easeOutBack(t) {
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-  }
-  
-  // Utility Sleep Function
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
-  
-  sendStatusUpdate(actionName) {
-    const status = {
-      type: 'raidStatusUpdate',
-      active: this.state.active,
-      lastAction: actionName,
-      totalClicks: this.state.totalClicks,
-      autoCombatActive: this.state.autoCombatActive,
-      currentScreen: this.state.currentScreen,
-      totalRaids: this.state.totalRaids,
-      timestamp: new Date().toLocaleTimeString()
-    };
-
-    // Include Break Status if Applicable
-    if (this.breakManager) {
-      const breakStatus = this.breakManager.getStatus();
-      Object.assign(status, breakStatus);
-    }      
-    
-    this.safeSendMessage(status);
-    chrome.storage.local.set({ raidStatus: status });
-  }
-  
-  updateStatus(message) {
-    this.state.lastAction = message;
-    
-    const status = {
-      type: 'raidStatusUpdate',
-      active: this.state.active,
-      lastAction: message,
-      totalClicks: this.state.totalClicks,
-      autoCombatActive: this.state.autoCombatActive,
-      currentScreen: this.state.currentScreen,
-      totalRaids: this.state.totalRaids,
-      timestamp: new Date().toLocaleTimeString()
-    };
-    
-    this.safeSendMessage(status);
-    chrome.storage.local.set({ raidStatus: status });
-  }
 }
 
+// ==========================================================
 // Initialize
+// ==========================================================
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    window.raidAutomator = new RaidAutomator();
-  });
+  document.addEventListener('DOMContentLoaded', () => { window.raidAutomator = new RaidAutomator(); });
 } else {
   window.raidAutomator = new RaidAutomator();
 }

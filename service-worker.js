@@ -6,109 +6,81 @@ const skills = {
   "8000": "Tag team"
 };
 
-// Listen for Keyboard Commands
+// Keyboard Commands
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-play-pause') {
     console.log('🎮 Toggle Play/Pause Hotkey Pressed');
-    
-    // Get the current active tab
+
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        // Get current play state
-        chrome.storage.local.get(['isPlaying'], (data) => {
-          const newState = !data.isPlaying;
-          
-          // Send Toggle Command to Content Script
-          chrome.tabs.sendMessage(tabs[0].id, {
-            type: 'toggleAutomation',
-            action: newState ? 'play' : 'pause'
-          }).then(response => {
-            console.log('✅ Toggle Response:', response);
-            
-            // Update Stored State
-            chrome.storage.local.set({ isPlaying: newState });
-            
-            // Notify Popup of State Change
-            chrome.runtime.sendMessage({
-              type: 'playStateChanged',
-              isPlaying: newState
-            }).catch(() => {
-              // Popup Might Not Be Open, That's Fine
-            });
-          }).catch(err => {
-            console.log('Content script not ready:', err);
-          });
+      if (!tabs[0]?.id) return;
+
+      chrome.storage.local.get(['isPlaying'], (data) => {
+        const newState = !data.isPlaying;
+
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'toggleAutomation',
+          action: newState ? 'play' : 'pause'
+        }).then(response => {
+          console.log('✅ Toggle Response:', response);
+          chrome.storage.local.set({ isPlaying: newState });
+
+          // Notify Popup if Open
+          chrome.runtime.sendMessage({
+            type: 'playStateChanged',
+            isPlaying: newState
+          }).catch(() => {});
+        }).catch(err => {
+          console.log('Content Script Not Ready:', err);
         });
-      }
+      });
     });
   }
-});
 
-// Listen for Storage Changes
-chrome.storage.onChanged.addListener(function (changes, namespace) {
-  for (let key in changes) {
-    let storageChange = changes[key];
-    console.log(
-      'Storage key "%s" in namespace "%s" changed. Old value was "%s", new value is "%s".',
-      key,
-      namespace,
-      storageChange.oldValue,
-      storageChange.newValue
-    );
+  if (command === 'deactivate-all') {
+    deactivateAll();
   }
 });
 
-// Deactivate All
+// Deactivate All Features
 function deactivateAll() {
-  console.log("Deactivate All");
-  let allVal = {};
-  for (const val of allKeys) {
-    allVal[val] = false;
-  }
+  console.log('🔴 Deactivating All Features.');
+  const allVal = Object.fromEntries(allKeys.map(key => [key, false]));
   chrome.storage.sync.set(allVal);
 }
 
-let keyboardShortcut = {
-  "deactivate-all": deactivateAll,
-};
-
-chrome.commands.onCommand.addListener(function (command) {
-  console.log('Command:', command);
-  if (keyboardShortcut[command]) keyboardShortcut[command]();
-});
-
 // Attack and Summon Reload
 chrome.webRequest.onCompleted.addListener(
-  function (details) {
+  (details) => {
     chrome.storage.sync.get(
       ["reloadSummon", "goBackOnSummon", "reloadAttack", "goBackOnAttack"],
-      function (data) {
+      (data) => {
         const isSummon = details.url.includes("summon_result.json");
         const isAttack = details.url.includes("normal_attack_result.json");
+        const delay = Math.random() * 500 + 500;
 
         if (isSummon) {
           if (data.reloadSummon) {
-            setTimeout(() => chrome.tabs.reload(details.tabId), Math.random() * 500 + 500);
+            setTimeout(() => chrome.tabs.reload(details.tabId), delay);
           } else if (data.goBackOnSummon) {
             setTimeout(() => {
               chrome.scripting.executeScript({
                 target: { tabId: details.tabId },
-                func: () => history.back(),
+                func: () => history.back()
               });
-            }, Math.random() * 500 + 500);
+            }, delay);
           }
         }
 
         if (isAttack) {
           if (data.reloadAttack) {
-            setTimeout(() => chrome.tabs.reload(details.tabId), Math.random() * 500 + 500);
+            setTimeout(() => chrome.tabs.reload(details.tabId), delay);
           } else if (data.goBackOnAttack) {
             setTimeout(() => {
               chrome.scripting.executeScript({
                 target: { tabId: details.tabId },
-                func: () => history.back(),
+                func: () => history.back()
               });
-            }, Math.random() * 500 + 500);
+            }, delay);
           }
         }
       }
@@ -117,21 +89,21 @@ chrome.webRequest.onCompleted.addListener(
   {
     urls: [
       "*://game.granbluefantasy.jp/rest/*/summon_result.json*",
-      "*://game.granbluefantasy.jp/rest/*/normal_attack_result.json*",
-    ],
+      "*://game.granbluefantasy.jp/rest/*/normal_attack_result.json*"
+    ]
   }
 );
 
 // Skill Reload
 chrome.webRequest.onBeforeRequest.addListener(
-  function (details) {
+  (details) => {
     const postedString = JSON.parse(
       decodeURIComponent(
         String.fromCharCode.apply(null, new Uint8Array(details.requestBody.raw[0].bytes))
       )
     );
 
-    chrome.storage.sync.get("reloadSkill", function (data) {
+    chrome.storage.sync.get("reloadSkill", (data) => {
       if (data.reloadSkill && Object.keys(skills).includes(postedString["ability_id"])) {
         chrome.tabs.reload(details.tabId);
       }
@@ -141,71 +113,120 @@ chrome.webRequest.onBeforeRequest.addListener(
     urls: [
       "*://game.granbluefantasy.jp/rest/*/ability_result.json*",
       "*://game.granbluefantasy.jp/rest/*/*/ability_result.json*"
-    ],
+    ]
   },
   ["requestBody"]
 );
 
-// Redirect Farm (Normal Raid)
-chrome.webRequest.onCompleted.addListener(
-  function (details) {
-    chrome.storage.sync.get(["redirectFarm"], function (data) {
-      if (data.redirectFarm) {
-        console.log("Redirect Active");
-        chrome.bookmarks.search({ title: "farm" }, function (result) {
-          if (result[0] && result[0].url) {
-            console.log("Found", result[0].url);
-            setTimeout(() => {
-              chrome.tabs.update(details.tabId, { url: result[0].url });
-            }, Math.random() * 500 + 500);
-          }
-        });
+// Redirect Farm
+function handleRedirectFarm(tabId) {
+  chrome.storage.sync.get(["redirectFarm"], (data) => {
+    if (!data.redirectFarm) return;
+
+    console.log('🔀 Redirect Active.');
+    chrome.bookmarks.search({ title: "farm" }, (result) => {
+      if (result[0]?.url) {
+        console.log('🔀 Redirecting to:', result[0].url);
+        setTimeout(() => {
+          chrome.tabs.update(tabId, { url: result[0].url });
+        }, Math.random() * 500 + 500);
       }
     });
-  },
+  });
+}
+
+// Redirect Farm (Normal Raid)
+chrome.webRequest.onCompleted.addListener(
+  (details) => handleRedirectFarm(details.tabId),
   {
     urls: [
       "*://game.granbluefantasy.jp/resultmulti/data/*",
-      "*://game.granbluefantasy.jp/*result/*",
-    ],
+      "*://game.granbluefantasy.jp/*result/*"
+    ]
   }
 );
 
 // Redirect Farm (Guild War)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" && tab.url?.includes("#result_multi/")) {
-    chrome.storage.sync.get(["redirectFarm"], function (data) {
-      if (data.redirectFarm) {
-        console.log("Redirect Active");
-        chrome.bookmarks.search({ title: "farm" }, function (result) {
-          if (result[0] && result[0].url) {
-            console.log("Found", result[0].url);
-            setTimeout(() => {
-              chrome.tabs.update(tabId, { url: result[0].url });
-            }, Math.random() * 500 + 500);
-          }
-        });
-      }
-    });
+    handleRedirectFarm(tabId);
   }
 });
 
 // Set Storage Defaults on Install
-chrome.runtime.onInstalled.addListener(function () {
+chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.set(storageDefaults, () => {
-    console.log("Storage Defaults Applied:", storageDefaults);
+    console.log('✅ Storage Defaults Applied:', storageDefaults);
   });
 
-  chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {
+  chrome.declarativeContent.onPageChanged.removeRules(undefined, () => {
     chrome.declarativeContent.onPageChanged.addRules([
       {
         conditions: [
           new chrome.declarativeContent.PageStateMatcher({
-            pageUrl: { hostEquals: "game.granbluefantasy.jp" },
-          }),
+            pageUrl: { hostEquals: "game.granbluefantasy.jp" }
+          })
         ],
-        actions: [new chrome.declarativeContent.ShowPageAction()],
-      },
+        actions: [new chrome.declarativeContent.ShowPageAction()]
+      }
     ]);
   });
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type === 'showNotification') {
+    chrome.notifications.create({
+      type:    'basic',
+      iconUrl: 'images/get_started128.png',
+      title:   msg.title,
+      message: msg.message
+    });
+    respond({ success: true });
+    return true;
+  }
+
+  if (msg.type === 'solveCaptcha') {
+    console.log('🔐 Service Worker: Received Captcha Solve Request');
+    const tabId = sender.tab.id;
+
+    // Submit Captcha Task
+    fetch('https://api.capsolver.com/createTask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: msg.apiKey,
+        task: {
+          type:      'ImageToTextTask',
+          body:      msg.image,
+          module:    'common',
+          score:     0.8,
+          case:      true
+        }
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      console.log('🔐 Service Worker: CapSolver Response:', data);
+
+      if (data.errorId !== 0) {
+        console.error('❌ CapSolver Error:', data.errorDescription);
+        chrome.tabs.sendMessage(tabId, { type: 'captchaSolution', solution: null });
+        return;
+      }
+
+      const solution = data.solution?.text || null;
+      console.log('🔐 Service Worker: Solution:', solution);
+
+      chrome.tabs.sendMessage(tabId, {
+        type:     'captchaSolution',
+        solution: solution
+      });
+    })
+    .catch(error => {
+      console.error('❌ Service Worker CapSolver Fetch Failed:', error);
+      chrome.tabs.sendMessage(tabId, { type: 'captchaSolution', solution: null });
+    });
+
+    return true;
+  }
 });

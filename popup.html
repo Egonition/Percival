@@ -4,81 +4,140 @@
   <meta charset="UTF-8">
   <title>Percival</title>
   <style>
-    body { font-family: sans-serif; padding: 10px; width: 300px; }
+    /* Base */
+    body {
+      font-family: sans-serif;
+      padding: 10px;
+      width: 300px;
+    }
 
+    /* Control Bar */
     .control-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 10px;
     }
-    
-    #playPauseBtn {
+
+    .btn {
       padding: 6px 12px;
-      background-color: #4CAF50;
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
       font-size: 12px;
       font-weight: bold;
+    }
+
+    #playPauseBtn {
+      background-color: #4CAF50;
       flex: 1;
       margin-right: 8px;
     }
-    
+
     #playPauseBtn.playing {
       background-color: #ff9800;
     }
 
     #deactivateTopBtn {
-      padding: 6px 12px;
       background-color: #f44336;
-      color: white;
-      border: none;
-      border-radius: 4px;
+    }
+
+    /* Tabs */
+    .tabs {
+      margin-bottom: 10px;
+    }
+
+    .tab {
       cursor: pointer;
-      font-size: 12px;
+      padding: 5px 10px;
+      border: 1px solid #ccc;
+      display: inline-block;
+      margin-right: 2px;
+    }
+
+    .tab.active {
+      background: #eee;
       font-weight: bold;
     }
 
-    .tabs { margin-bottom: 10px; }
-    .tab { cursor: pointer; padding: 5px 10px; border: 1px solid #ccc; display: inline-block; margin-right: 2px; }
-    .tab.active { background: #eee; font-weight: bold; }
-    .tab-content { display: none; padding: 5px; border-top: 1px solid #ccc; }
+    .tab-content {
+      display: none;
+      padding: 5px;
+      border-top: 1px solid #ccc;
+    }
+
     .tab-content ul { padding-left: 20px; margin: 5px 0; }
     .tab-content li { margin: 2px 0; }
     .tab-content li.empty { opacity: 0.5; font-style: italic; }
-    
-    /* Settings grid layout */
+
+    /* Settings */
     .settings-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px 16px;
       padding: 5px 0;
     }
-    
+
     .setting-item {
       display: flex;
       align-items: center;
       white-space: nowrap;
     }
-    
+
     .setting-item input[type="checkbox"] {
       margin-right: 6px;
     }
-    
+
     .full-width {
       grid-column: span 2;
+    }
+
+    /* Break Controls */
+    #breakControls {
+      display: none;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #ccc;
+    }
+
+    #breakControls h4 {
+      margin: 0 0 10px 0;
+      color: #2e7d32;
+    }
+
+    #forceEndBreakBtn {
+      width: 100%;
+      padding: 10px;
+      background: #ff9800;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    #breakStatus {
+      padding: 8px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      font-size: 11px;
+      text-align: center;
+      border-left: 4px solid #4CAF50;
+      min-height: 20px;
     }
   </style>
 </head>
 <body>
+
   <!-- Control Bar -->
   <div class="control-bar">
-    <button id="playPauseBtn" title="Hotkey: Ctrl+Shift+Space (⌘+Shift+Space on Mac)">
+    <button id="playPauseBtn" class="btn" title="Hotkey: Ctrl+Shift+Space (⌘+Shift+Space on Mac)">
       <span id="playPauseText">▶️ Start</span>
     </button>
-    <button id="deactivateTopBtn">Deactivate All</button>
+    <button id="deactivateTopBtn" class="btn">Deactivate All</button>
   </div>
 
   <!-- Tabs -->
@@ -88,7 +147,7 @@
   </div>
 
   <!-- Drop List -->
-  <div id="dropsContent" class="tab-content" style="display:block;">
+  <div id="dropsContent" class="tab-content" style="display: block;">
     <div id="dropContainer"></div>
   </div>
 
@@ -96,45 +155,18 @@
   <div id="settingsContent" class="tab-content">
     <div id="options" class="settings-grid"></div>
 
-    <div id="breakControls" style="
-      margin-top: 20px;
-      padding-top: 15px;
-      border-top: 1px solid #ccc;
-      display: none;
-    ">
-      <h4 style="margin: 0 0 10px 0; color: #2e7d32;">Break Controls</h4>
-      
-      <button id="forceEndBreakBtn" style="
-        width: 100%;
-        padding: 10px;
-        background: #ff9800;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: bold;
-        margin-bottom: 10px;
-      ">
-        ▶️ Force End Break
-      </button>
-      
-      <div id="breakStatus" style="
-        padding: 8px;
-        background: #f8f9fa;
-        border-radius: 6px;
-        font-size: 11px;
-        text-align: center;
-        border-left: 4px solid #4CAF50;
-        min-height: 20px;
-      ">
-        Break Controls Ready
-      </div>
+    <!-- Break Controls -->
+    <div id="breakControls">
+      <h4>Break Controls</h4>
+      <button id="forceEndBreakBtn">▶️ Force End Break</button>
+      <div id="breakStatus">Break Controls Ready</div>
     </div>
   </div>
 
   <!-- Scripts -->
-  <script src="data/dropTables.js"></script>
+  <script src="constants.js"></script>
+  <script src="drop-data.js"></script>
   <script src="popup.js"></script>
+
 </body>
 </html>

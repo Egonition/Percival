@@ -1,18 +1,23 @@
 {
   "name": "Percival",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "GBF Script",
+  "manifest_version": 3,
+
   "permissions": [
     "scripting",
     "tabs",
     "storage",
     "webRequest",
     "declarativeContent",
-    "bookmarks"
+    "bookmarks",
+    "notifications"
   ],
+
   "host_permissions": [
     "http://game.granbluefantasy.jp/*",
-    "https://game.granbluefantasy.jp/*"
+    "https://game.granbluefantasy.jp/*",
+    "https://api.anthropic.com/*"
   ],
 
   "background": {
@@ -22,43 +27,44 @@
   "content_scripts": [
     {
       "matches": ["https://game.granbluefantasy.jp/*"],
-      "js": ["error-suppression.js",
-       "data/dropTables.js",
-       "content-inventory.js",
-       "break-manager.js",
-       "raid-automation.js"
-       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "js": [
+        "config.js",
+        "error-suppression.js",
+        "drop-data.js",
+        "content-inventory.js",
+        "captcha-solver.js",
+        "break-manager.js",
+        "mouse-simulator.js",
+        "raid-automation.js"
+      ]
     }
   ],
 
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/get_started16.png",
-      "32": "images/get_started32.png",
-      "48": "images/get_started48.png",
+      "16":  "images/get_started16.png",
+      "32":  "images/get_started32.png",
+      "48":  "images/get_started48.png",
       "128": "images/get_started128.png"
     }
   },
 
   "icons": {
-    "16": "images/get_started16.png",
-    "32": "images/get_started32.png",
-    "48": "images/get_started48.png",
+    "16":  "images/get_started16.png",
+    "32":  "images/get_started32.png",
+    "48":  "images/get_started48.png",
     "128": "images/get_started128.png"
   },
 
-  "options_page": "popup.html",
-  
   "commands": {
     "toggle-play-pause": {
       "suggested_key": {
         "default": "Ctrl+Shift+Space",
-        "mac": "Command+Shift+Space"
+        "mac":     "Command+Shift+Space"
       },
       "description": "Toggle Play/Pause Automation"
     }
-  },
-  "manifest_version": 3
+  }
 }
