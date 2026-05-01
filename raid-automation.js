@@ -15,6 +15,7 @@ class RaidAutomator {
 
     this.state = {
       active:                false,
+      checkingButtons:       false,
       lastAction:            'Ready',
       totalClicks:           0,
       lastCheck:             0,
@@ -47,16 +48,14 @@ class RaidAutomator {
     };
 
     this.timing = {
-      COOLDOWN:           2000 + Math.random() * 3000,  // 2-5 seconds
-      CHECK_INTERVAL:     800  + Math.random() * 700,   // 0.8-1.5 seconds
+      COOLDOWN:           2000 + Math.random() * 3000,
+      CHECK_INTERVAL:     800  + Math.random() * 700,
       RAID_LOAD_MIN:      9000,
       RAID_LOAD_MAX:      16000,
       MOUSE_STEPS_MIN:    8,
       MOUSE_STEPS_MAX:    20,
       STEP_DELAY_MIN:     10,
       STEP_DELAY_MAX:     30,
-
-      // Human Delay Settings
       HUMAN_DELAY_CHANCE: 0.3,
       HUMAN_DELAY_MIN:    500,
       HUMAN_DELAY_MAX:    3000,
@@ -78,7 +77,6 @@ class RaidAutomator {
   // ==========================================================
 
   async init() {
-    // Reset Captcha State on Init
     this.state.solvingCaptcha = false;
 
     await this.loadSettings();
@@ -301,7 +299,7 @@ class RaidAutomator {
     const currentUrl     = window.location.href;
     const urlChanged     = this.state.lastUrl !== currentUrl;
 
-    const okButton       = this.findOkButton();
+    const okButton       = this.findQuestStartButton();
     const autoButton     = this.findAutoButton();
     const isStartScreen  = okButton   && this.isVisible(okButton);
     const isBattleScreen = autoButton && this.isVisible(autoButton);
@@ -379,7 +377,6 @@ class RaidAutomator {
     this.state.raidDurations = this.state.raidDurations || [];
     this.state.raidDurations.push(raidDuration);
 
-    // Cap at Last 100 Entries
     if (this.state.raidDurations.length > 100) {
       this.state.raidDurations.shift();
     }
@@ -499,7 +496,6 @@ class RaidAutomator {
 
           if (!this.hasBlockingPopup().found) {
             console.log('✅ Captcha Cleared - Automation Resuming.');
-
             this.state.solvingCaptcha = false;
             return;
           }
@@ -589,58 +585,74 @@ class RaidAutomator {
   // Button Checks
   // ==========================================================
 
-  checkButtons() {
-    const breakStatus = this.breakManager.getStatus();
-    if (breakStatus.isOnBreak || !this.state.active) return;
+  async checkButtons() {
+    if (this.state.checkingButtons) return;
+    this.state.checkingButtons = true;
+    try {
+      const breakStatus = this.breakManager.getStatus();
+      if (breakStatus.isOnBreak || !this.state.active) return;
 
-    // Reload on Dead Boss
-    if (this.state.currentScreen === 'battle' && this.findDeadBoss()) {
-      console.log('💀 Boss is Dead - Reloading Page...');
-      this.updateStatus('Boss Dead - Reloading...');
-      setTimeout(() => window.location.reload(), 1000 + Math.random() * 1000);
-      return;
-    }
-
-    if (this.hasBlockingPopup().found) {
-      this.handlePopupDetected();
-      return;
-    }
-
-    const now = Date.now();
-    if (now - this.state.lastCheck < 500) return;
-    this.state.lastCheck = now;
-
-    // Start Raid
-    if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
-      const okButton = this.findOkButton();
-      if (okButton) {
-        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
-        this.clickRaidStart(okButton);
-      }
-    }
-
-    const inBattle = this.state.currentScreen === 'battle' &&
-                     this.state.hasSeenAutoButton          &&
-                     !this.state.autoClickAttempted        &&
-                     !this.state.autoCombatActive;
-
-    // Quick Attack
-    if (this.settings.quickAttack && this.canClick('attack') && inBattle) {
-      const attackButton = this.findAttackButton();
-      if (attackButton) {
-        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
-        this.clickQuickAttack(attackButton);
+      // Handle Auto-Dismissable Popups
+      if (this.findDismissablePopup()) {
+        const btn = this.findPopupButton();
+        if (btn) {
+          await this.mouse.simulateHumanClick(btn, 'Closing Popup');
+        }
         return;
       }
-    }
 
-    // Auto Combat
-    if (this.settings.autoCombat && this.canClick('auto') && inBattle) {
-      const autoButton = this.findAutoButton();
-      if (autoButton) {
-        if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
-        this.clickAutoCombat(autoButton);
+      // Handle Dead Boss Scenario
+      if (this.state.currentScreen === 'battle' && this.findDeadBoss()) {
+        console.log('💀 Boss is Dead - Reloading Page...');
+        this.updateStatus('Boss Dead - Reloading...');
+        setTimeout(() => window.location.reload(), 1000 + Math.random() * 1000);
+        return;
       }
+
+      // Handle Blocking Popup
+      if (this.hasBlockingPopup().found) {
+        this.handlePopupDetected();
+        return;
+      }
+
+      const now = Date.now();
+      if (now - this.state.lastCheck < 500) return;
+      this.state.lastCheck = now;
+
+      // Start Raid
+      if (this.settings.autoRaid && this.canClick('ok') && this.state.currentScreen === 'start') {
+        const okButton = this.findQuestStartButton();
+        if (okButton) {
+          if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+          await this.clickRaidStart(okButton);
+        }
+      }
+
+      const inBattle = this.state.currentScreen === 'battle' &&
+                       this.state.hasSeenAutoButton          &&
+                       !this.state.autoClickAttempted        &&
+                       !this.state.autoCombatActive;
+
+      // Quick Attack
+      if (this.settings.quickAttack && this.canClick('attack') && inBattle) {
+        const attackButton = this.findAttackButton();
+        if (attackButton) {
+          if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+          await this.clickQuickAttack(attackButton);
+          return;
+        }
+      }
+
+      // Auto Combat
+      if (this.settings.autoCombat && this.canClick('auto') && inBattle) {
+        const autoButton = this.findAutoButton();
+        if (autoButton) {
+          if (this.hasBlockingPopup().found) { this.handlePopupDetected(); return; }
+          await this.clickAutoCombat(autoButton);
+        }
+      }
+    } finally {
+      this.state.checkingButtons = false;
     }
   }
 
@@ -723,27 +735,59 @@ class RaidAutomator {
   // Element Finders
   // ==========================================================
 
-  findOkButton() {
-    const b1 = document.querySelector('.btn-usual-ok.se-quest-start');
-    const b2 = document.querySelector('.btn-usual-ok.btn-silent-se');
+  findQuestStartButton() {
+    const deckContainer  = document.querySelector('.prt-btn-deck');
+    const questContainer = document.querySelector('.prt-set-quest');
+
+    const b1 = deckContainer?.querySelector('.btn-usual-ok.se-quest-start');
+    const b2 = deckContainer?.querySelector('.btn-usual-ok.btn-silent-se');
+    const b3 = questContainer?.querySelector('.btn-quest-start.multi.se-quest-start');
+
     if (b1 && this.isVisible(b1)) return b1;
     if (b2 && this.isVisible(b2)) return b2;
+    if (b3 && this.isVisible(b3)) return b3;
+
     return null;
   }
 
   findAttackButton() {
-    const btn = document.querySelector('.btn-attack-start');
+    const container = document.querySelector('#cnt-raid-information');
+    const btn       = container?.querySelector('.btn-attack-start');
     return btn && this.isVisible(btn) ? btn : null;
   }
 
   findAutoButton() {
-    const btn = document.querySelector('.btn-auto');
+    const container = document.querySelector('.cnt-raid');
+    const btn       = container?.querySelector('.btn-auto');
     return btn && this.isVisible(btn) ? btn : null;
   }
 
   findDeadBoss() {
     const hpElement = document.getElementById('enemy-hp0');
     return hpElement && hpElement.textContent.trim() === '0';
+  }
+
+  findDismissablePopup() {
+    const popup = document.querySelector('.pop-usual');
+    if (!popup) return false;
+
+    const isBattleEnded = !!popup.querySelector('.txt-rematch-fail');
+    const isExpGained   = popup.querySelector('.prt-popup-header')?.textContent?.trim() === 'EXP Gained';
+
+    return isBattleEnded || isExpGained;
+  }
+
+  findPopupButton() {
+    const popup = document.querySelector('.pop-usual');
+    if (!popup) return null;
+
+    const isBattleEnded = !!popup.querySelector('.txt-rematch-fail');
+    const isExpGained   = popup.querySelector('.prt-popup-header')?.textContent?.trim() === 'EXP Gained';
+
+    if (!isBattleEnded && !isExpGained) return null;
+
+    const btn = popup.querySelector('.btn-usual-ok, .btn-usual-close');
+    return btn && this.isVisible(btn) ? btn : null;
   }
 
   isVisible(element) {
