@@ -402,8 +402,8 @@ class RaidAutomator {
 
     const popupTypes = [
       {
-        type:  'APPopup',
-        match: text.includes('ap') || text.includes('aap')
+        type: 'APPopup',
+        match: /\b(aap|ap)\b/i.test(popupText)
       },
       {
         type:  'BlockingPopup',
