@@ -20,8 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     reloadSummon:   'Reload On Summon',
     reloadSkill:    'Reload On Skill',
     redirectFarm:   'Redirect to Farm',
-    autoRaid:       'Auto Raid',
-    autoCombat:     'Auto Combat',
+    autoRaid:       'Start Raid',
+    autoCombat:     'Full Auto',
     quickAttack:    'Quick Attack',
     enableBreaks:   'Enable Breaks'
   };
