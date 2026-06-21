@@ -3,7 +3,8 @@ importScripts("constants.js");
 
 const skills = {
   "6199": "Conjunction",
-  "8000": "Tag team"
+  "8000": "Tag team",
+  "232981": "Koenig Dekret"
 };
 
 // Keyboard Commands
