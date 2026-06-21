@@ -106,7 +106,8 @@ chrome.webRequest.onBeforeRequest.addListener(
 
     chrome.storage.sync.get("reloadSkill", (data) => {
       if (data.reloadSkill && Object.keys(skills).includes(postedString["ability_id"])) {
-        chrome.tabs.reload(details.tabId);
+        const delay = Math.random() * 500 + 500;
+        setTimeout(() => chrome.tabs.reload(details.tabId), delay);
       }
     });
   },
